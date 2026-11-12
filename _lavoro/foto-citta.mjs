@@ -8,7 +8,7 @@ const QUALITA = process.argv[2] ?? 'alta';
 const ORA = process.argv[3] ?? 'tramonto';
 const SOLO = process.argv[4]?.split(',');
 const MISURA_MS = 5000;
-const PUNTI = [
+const PUNTI = JSON.parse(process.argv[5] ?? 'null') ?? [
   { nome: 'piazza', x: -40, y: 1.7, z: 8, yaw: -1.45, pitch: 0.02 },
   { nome: 'via', x: -150, y: 1.7, z: -60, yaw: 2.2, pitch: 0 },
   { nome: 'centro-alto', x: -260, y: 60, z: 260, yaw: -2.4, pitch: -0.32 },

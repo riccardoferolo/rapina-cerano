@@ -126,11 +126,17 @@ test('preparazione linea e fotografie si completano con le loro azioni', () => {
   assert.equal(foto.missione.fatto, true, JSON.stringify(foto.missione));
 });
 
-test('la campagna sblocca i colpi in ordine e il furgone rubato vale per il municipio', () => {
+test('la campagna sblocca i colpi in ordine (supermercato dopo la tabaccheria) e il furgone rubato vale per il municipio', () => {
   const c = camp.nuovaCampagna();
   assert.equal(camp.sbloccato(c, 'tabaccheria'), true);
   assert.equal(camp.sbloccato(c, 'furgone'), false);
+  assert.equal(camp.sbloccato(c, 'supermercato'), false);
   camp.registraEsito(c, 'tabaccheria', { vinto: true, totale: 20000 }, ['Richi', 'Seba']);
+  assert.equal(camp.sbloccato(c, 'supermercato'), true);
+  assert.equal(camp.sbloccato(c, 'furgone'), false);
+  camp.registraEsito(c, 'supermercato', { vinto: false, totale: 0 }, ['Richi', 'Seba']);
+  assert.equal(camp.sbloccato(c, 'furgone'), false);
+  camp.registraEsito(c, 'supermercato', { vinto: true, totale: 0 }, ['Richi', 'Seba']);
   assert.equal(camp.sbloccato(c, 'furgone'), true);
   assert.equal(camp.scheda(c, 'Richi').soldi, 2500 + 10000);
   assert.equal(camp.compra(c, 'Richi', 'trapano').ok, true);

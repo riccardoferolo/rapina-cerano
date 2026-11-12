@@ -1,0 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { creaAmbiente } from '../src/gioco/ambiente.js';
+const dati = JSON.parse(readFileSync(new URL('../public/cerano/cerano.json', import.meta.url), 'utf8'));
+const amb = creaAmbiente(dati);
+const l = amb.luoghi.get(process.argv[2] ?? 'supermercato');
+const dentroPoli = (x, z, p) => { let d = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) { const [xi, zi] = p[i]; const [xj, zj] = p[j]; if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) d = !d; } return d; };
+const vicini = dati.edifici.filter(e => e.id !== l.c.edificio.id && e.p.some(([x, z]) => Math.hypot(x - l.centro[0], z - l.centro[1]) < 45));
+const sonda = (u, v) => { const [x, z] = l.mondo(u, v); const e = vicini.find(e => dentroPoli(x, z, e.p)); return e ? `${e.id}(${e.u},h${e.h})` : 'libero'; };
+for (let v = 1; v < 24; v += 2) console.log(`v ${String(v).padStart(2)}  sinistra(u=-1): ${sonda(-1, v).padEnd(30)} destra(u=13.8): ${sonda(13.8, v)}`);
+for (let u = 1; u < 13; u += 2) console.log(`u ${String(u).padStart(2)}  retro(v=24.6): ${sonda(u, 24.6)}`);

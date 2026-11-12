@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { leggiPng, scriviPng, creaTela } from './png.mjs';
+import { caricaAltezze } from './altezze-bdtre.mjs';
 import {
   areaFirmata, baricentro, dentro, puntoSegmento, intersezioneRaggio, campionaLinea, semplifica, rientra, scatola, larghezzaMinima, hashNumero, distanza,
 } from '../src/citta/geometria.js';
@@ -198,6 +199,9 @@ const TINTE_MURO = Object.freeze([
   [208, 196, 178], [236, 232, 220], [222, 160, 112], [200, 186, 160],
 ]);
 
+const USI_BASSI = new Set(['box', 'tettoia', 'serra', 'cabina', 'rudere']);
+const RIDUZIONE_FALDA = 0.23;
+const altezze = caricaAltezze(proietta);
 const edifici = [];
 const grigliaEdifici = creaGriglia();
 for (const e of elementi) {
@@ -230,12 +234,21 @@ for (const e of elementi) {
       const [r, g, b] = coloreTetto;
       coloreTetto = r > g + 8 ? [Math.min(255, r * 1.08), g * 0.95, b * 0.9] : [142 + caso * 20, 82 + caso * 14, 62];
     } else coloreTetto = [coloreTetto[0] * 0.9, coloreTetto[1] * 0.9, coloreTetto[2] * 0.92];
+    let altezza = stima.altezza;
+    let piani = stima.piani;
+    const reale = e.id === CHIESA || e.id === MUNICIPIO ? null : altezze.altezzaReale(anello, USI_BASSI.has(stima.uso));
+    if (reale !== null) {
+      const tolta = tetto === 'falde' ? RIDUZIONE_FALDA * Math.min(4.2, 0.49 * larghezzaMinima(anello).largo) : 0;
+      altezza = Math.max(2.4, reale - tolta);
+      if (piani > 0) piani = Math.max(1, Math.min(8, Math.round((altezza - 0.3) / 3)));
+    }
     const tinta = stima.muro === 'mattoni' ? [172, 104, 80] : stima.muro === 'industriale' ? [190 + caso * 30, 192 + caso * 26, 188 + caso * 20] : TINTE_MURO[Math.floor(caso * TINTE_MURO.length)];
     const voce = {
-      id: e.id, u: stima.uso, m: stima.muro, h: rnd1(stima.altezza), np: stima.piani, t: tetto, ct: aHex(coloreTetto), cm: aHex(tinta),
+      id: e.id, u: stima.uso, m: stima.muro, h: rnd1(altezza), np: piani, t: tetto, ct: aHex(coloreTetto), cm: aHex(tinta),
       p: anello.map(([x, z]) => [rnd1(x), rnd1(z)]),
     };
     if (tag.name) voce.n = tag.name;
+    if (reale !== null) voce.hr = 1;
     const s = scatola(anello);
     edifici.push(voce);
     grigliaEdifici.aggiungi(s.x0, s.z0, s.x1, s.z1, voce);
@@ -510,17 +523,104 @@ for (const e of elementi) {
   luoghi.push({ n: tag.name, t: tag.amenity ?? tag.shop ?? tag.tourism ?? tag.leisure, x: rnd1(pos[0]), z: rnd1(pos[1]) });
 }
 
+const DETTAGLI = fileURLToPath(new URL('./osm/cerano-dettagli.json', import.meta.url));
+const arredi = [];
+if (existsSync(DETTAGLI)) {
+  const segmenti = [];
+  for (const s of strade) {
+    if (!s.a && !s.pe) continue;
+    for (let i = 1; i < s.p.length; i++) segmenti.push({ s, i, a: s.p[i - 1], b: s.p[i] });
+  }
+  const lunghezze = new Map(strade.map(s => {
+    let l = 0;
+    const cum = [0];
+    for (let i = 1; i < s.p.length; i++) cum.push((l += distanza(s.p[i - 1], s.p[i])));
+    return [s, cum];
+  }));
+  const piuVicina = (x, z, entro = 12) => {
+    let migliore = null;
+    for (const g of segmenti) {
+      const [ax, az] = g.a;
+      const [bx, bz] = g.b;
+      const l2 = (bx - ax) ** 2 + (bz - az) ** 2 || 1;
+      const t = Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (z - az) * (bz - az)) / l2));
+      const px = ax + (bx - ax) * t;
+      const pz = az + (bz - az) * t;
+      const d = Math.hypot(x - px, z - pz);
+      if (d > entro || (migliore && d >= migliore.d)) continue;
+      const l = Math.sqrt(l2);
+      migliore = { d, px, pz, ux: (bx - ax) / l, uz: (bz - az) / l, s: g.s, i: g.i, t, lato: Math.sign((x - px) * -((bz - az) / l) + (z - pz) * ((bx - ax) / l)) || 1 };
+    }
+    return migliore;
+  };
+  const r2 = v => Math.round(v * 100) / 100;
+  const elementiDettaglio = JSON.parse(readFileSync(DETTAGLI, 'utf8')).elements;
+  const conteggio = {};
+  const metti = (voce) => {
+    arredi.push(voce);
+    conteggio[voce[0]] = (conteggio[voce[0]] ?? 0) + 1;
+  };
+  for (const e of elementiDettaglio) {
+    if (e.type !== 'node') continue;
+    const t = e.tags ?? {};
+    const [x, z] = proietta(e.lat, e.lon);
+    if (!dentroLimite([x, z], -10)) continue;
+    if (t.highway === 'crossing' || t.crossing === 'zebra' || t.crossing === 'marked' || t.crossing === 'uncontrolled') {
+      const v = piuVicina(x, z, 4);
+      if (v) metti(['strisce', rnd1(v.px), rnd1(v.pz), r2(Math.atan2(v.uz, v.ux)), v.s.l]);
+      continue;
+    }
+    if (t.highway === 'stop' || t.highway === 'give_way') {
+      const v = piuVicina(x, z, 6);
+      if (!v) continue;
+      const cum = lunghezze.get(v.s);
+      const qui = cum[v.i - 1] + (cum[v.i] - cum[v.i - 1]) * v.t;
+      const versoFine = cum[cum.length - 1] - qui < qui ? 1 : -1;
+      const dx = v.ux * versoFine;
+      const dz = v.uz * versoFine;
+      const [rx, rz] = [-dz, dx];
+      const fuori = v.s.l / 2 + 0.55;
+      metti([t.highway === 'stop' ? 'stop' : 'precedenza', rnd1(v.px + rx * fuori), rnd1(v.pz + rz * fuori), r2(Math.atan2(-dx, -dz))]);
+      if (t.highway === 'stop') metti(['linea', rnd1(v.px + rx * v.s.l / 4), rnd1(v.pz + rz * v.s.l / 4), r2(Math.atan2(dz, dx)), r2(v.s.l / 2 - 0.2)]);
+      continue;
+    }
+    if (t.highway === 'traffic_signals') {
+      const v = piuVicina(x, z, 6);
+      if (!v) continue;
+      for (const lato of [1, -1]) {
+        const fuori = (v.s.l / 2 + 0.6) * lato;
+        metti(['semaforo', rnd1(v.px - v.uz * fuori), rnd1(v.pz + v.ux * fuori), r2(Math.atan2(v.ux * lato, v.uz * lato))]);
+      }
+      continue;
+    }
+    if (t.highway === 'bus_stop') {
+      const v = piuVicina(x, z, 15);
+      if (!v) continue;
+      const lato = v.d > 1 ? v.lato : 1;
+      const fuori = (v.s.l / 2 + 0.9) * lato;
+      metti(['fermata', rnd1(v.px - v.uz * fuori), rnd1(v.pz + v.ux * fuori), r2(Math.atan2(-v.uz * lato, v.ux * lato)), t.name ?? '']);
+      continue;
+    }
+    if (t.amenity === 'fountain') metti(['fontana', rnd1(x), rnd1(z), 0, t.name ?? '']);
+    else if (t.amenity === 'drinking_water') metti(['fontanella', rnd1(x), rnd1(z), 0]);
+    else if (t.historic === 'memorial' && t.memorial !== 'plaque') metti([t.memorial === 'war_memorial' ? 'monumento' : 'stele', rnd1(x), rnd1(z), 0, t.name ?? '']);
+    else if (t.natural === 'tree' && !alberi.some(([ax, az]) => Math.abs(ax - x) < 2 && Math.abs(az - z) < 2)) alberi.push([rnd1(x), rnd1(z), 1]);
+  }
+  console.log(`dettagli OSM: ${Object.entries(conteggio).map(([k, v]) => `${v} ${k}`).join(', ')}`);
+}
+
 const dati = {
   versione: 1,
-  fonte: 'Dati cartografici © OpenStreetMap contributors (ODbL); colori dei tetti e alberi dalla ortofoto 2010 © Regione Piemonte (CC BY 4.0)',
+  fonte: 'Dati cartografici © OpenStreetMap contributors (ODbL); colori dei tetti e alberi dalla ortofoto 2010 © Regione Piemonte (CC BY 4.0); altezze degli edifici da Regione Piemonte - BDTRE, ARPA Piemonte (CC BY 4.0)',
   origine: { lat: LAT0, lon: LON0, rotazione: 18.7 },
   limite: LIMITE,
   vie: nomiVie,
-  edifici, strade, aree, acque, ferrovie, alberi, lampioni, luoghi,
+  edifici, strade, aree, acque, ferrovie, alberi, lampioni, luoghi, arredi,
 };
 mkdirSync(USCITA, { recursive: true });
 const testo = JSON.stringify(dati);
 writeFileSync(join(USCITA, 'cerano.json'), testo);
+console.log(`altezze BDTRE: ${altezze.statistiche.misurati} edifici con altezza misurata, ${altezze.statistiche.ripiego} stimati`);
 console.log(`cerano.json: ${(testo.length / 1024).toFixed(0)} kB — ${edifici.length} edifici, ${strade.length} strade, ${aree.length} aree, ${acque.length} acque, ${alberi.length} alberi, ${lampioni.length} lampioni, ${luoghi.length} luoghi`);
 
 const COLORI_AREE = { campo: [58, 74, 40], prato: [70, 104, 52], parco: [64, 110, 56], campetto: [70, 120, 60], bosco: [34, 62, 34], aia: [120, 110, 90], piazzale: [110, 110, 110], cimitero: [90, 100, 80], cava: [150, 140, 110], acqua: [40, 80, 120], parcheggio: [80, 80, 84], piscina: [80, 170, 220], massicciata: [120, 110, 100] };

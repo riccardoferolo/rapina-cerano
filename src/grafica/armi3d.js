@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ARMI } from '../gioco/regole.js';
 
 const URL_ARMI = './modelli/armi.glb';
@@ -106,6 +107,73 @@ export function modelloArma(tipo, materiali) {
   gruppo.rotation.set(0, 0, 0);
   if (tipo !== 'coltello') vestiArma(gruppo, dati, materiali);
   return { gruppo, bocca, presa, lunghezza, colore };
+}
+
+function attributoPiatto(attributo, indice, n, misura) {
+  const out = new Float32Array(n * misura);
+  const leggi = [a => a.getX.bind(a), a => a.getY.bind(a), a => a.getZ.bind(a)].slice(0, misura);
+  const lettori = attributo ? leggi.map(f => f(attributo)) : null;
+  for (let i = 0; i < n; i++) {
+    const j = indice ? indice.getX(i) : i;
+    for (let k = 0; k < misura; k++) out[i * misura + k] = lettori ? lettori[k](j) : 0;
+  }
+  return new THREE.BufferAttribute(out, misura);
+}
+
+function geometriaPiatta(mesh) {
+  const g = mesh.geometry;
+  const indice = g.index;
+  const n = indice ? indice.count : g.attributes.position.count;
+  const piatta = new THREE.BufferGeometry();
+  piatta.setAttribute('position', attributoPiatto(g.attributes.position, indice, n, 3));
+  piatta.setAttribute('normal', attributoPiatto(g.attributes.normal, indice, n, 3));
+  piatta.setAttribute('uv', attributoPiatto(g.attributes.uv, indice, n, 2));
+  if (!g.attributes.normal) piatta.computeVertexNormals();
+  piatta.applyMatrix4(mesh.matrixWorld);
+  if (mesh.matrixWorld.determinant() < 0) {
+    for (const nome of ['position', 'normal', 'uv']) {
+      const a = piatta.attributes[nome];
+      for (let t = 0; t < n; t += 3) for (let k = 0; k < a.itemSize; k++) {
+        const x = a.array[(t + 1) * a.itemSize + k];
+        a.array[(t + 1) * a.itemSize + k] = a.array[(t + 2) * a.itemSize + k];
+        a.array[(t + 2) * a.itemSize + k] = x;
+      }
+    }
+  }
+  return piatta;
+}
+
+export function modelloArmaUnito(tipo, materiali) {
+  materiali.unite ??= new Map();
+  if (!materiali.unite.has(tipo)) {
+    const { gruppo } = modelloArma(tipo, materiali);
+    gruppo.updateMatrixWorld(true);
+    const perMateriale = new Map();
+    const singoli = [];
+    gruppo.traverse(o => {
+      if (!o.isMesh) return;
+      if (Array.isArray(o.material)) {
+        singoli.push(o);
+        return;
+      }
+      if (!perMateriale.has(o.material)) perMateriale.set(o.material, []);
+      perMateriale.get(o.material).push(geometriaPiatta(o));
+    });
+    const unito = new THREE.Group();
+    for (const [materiale, geometrie] of perMateriale) {
+      const mesh = new THREE.Mesh(mergeGeometries(geometrie, false), materiale);
+      mesh.castShadow = false;
+      unito.add(mesh);
+    }
+    for (const o of singoli) {
+      const copia = o.clone();
+      copia.matrixAutoUpdate = false;
+      copia.matrix.copy(o.matrixWorld);
+      unito.add(copia);
+    }
+    materiali.unite.set(tipo, unito);
+  }
+  return { gruppo: materiali.unite.get(tipo).clone() };
 }
 
 function capsula(gruppo, materiale, raggio, da, a) {

@@ -61,7 +61,7 @@ export function allestisci(def, seme, luogo, citta) {
     const pos = scegli(caso, cf.candidati);
     const codice = Array.from({ length: 4 }, () => Math.floor(caso() * 10)).join('');
     const [x, z] = mondo(pos.u, pos.v);
-    return { id: cf.id, tipo: cf.tipo, x, z, yaw: versoMondo(pos.verso ?? 0), codice, bottino: cf.bottino, grande: !!cf.grande, chiaviDa: cf.chiaviDa ?? null };
+    return { id: cf.id, tipo: cf.tipo, x, z, yaw: versoMondo(pos.verso ?? 0), codice, bottino: cf.bottino, grande: !!cf.grande, chiaviDa: cf.chiaviDa ?? null, ritardo: cf.ritardo ?? 0 };
   });
   const biglietti = (def.biglietti ?? []).map((b, i) => {
     const pos = scegli(caso, b.candidati);
@@ -83,7 +83,7 @@ export function allestisci(def, seme, luogo, citta) {
   });
   const casse = (def.casse ?? []).map(c => {
     const [x, z] = mondo(c.u, c.v);
-    return { id: c.id, x, z, yaw: versoMondo(c.verso ?? 0), sacco: c.sacco, valore: c.valore };
+    return { id: c.id, x, z, y: c.y ?? 1.05, yaw: versoMondo(c.verso ?? 0), sacco: c.sacco, valore: c.valore };
   });
   const pulsanti = (def.pulsanti ?? []).map(p => {
     const [x, z] = mondo(p.u, p.v);
@@ -99,6 +99,10 @@ export function allestisci(def, seme, luogo, citta) {
   });
   const auto = postoAuto(citta, luogo, def, caso, def.auto ?? {}, [blindato, daRubare].filter(Boolean));
   const extra = missione(def, luogo, caso);
+  const propri = (def.oggetti ?? []).map(o => {
+    const [x, z] = mondo(o.u, o.v);
+    return { id: o.id, tipo: o.tipo, x, z, y: o.y ?? 0, yaw: versoMondo(o.verso ?? 0) };
+  });
   const vetrine = (def.vetrineGioielli ?? []).map((v, i) => {
     const [x, z] = mondo(v.u, v.v);
     return { id: `vetrina-${i}`, x, z, yaw: versoMondo(v.verso ?? 0), valore: v.valore, sacco: v.sacco ?? 'gioielli' };
@@ -106,7 +110,7 @@ export function allestisci(def, seme, luogo, citta) {
   for (const p of extra.png) png.push(p);
   for (const s of extra.sacchi) sacchi.push(s);
   const foto = def.preparazione === 'fotografie' ? [...telecamere.map(t => t.id), ...png.filter(p => p.tipo === 'vigilante').map(p => `png:${p.indice}`)] : [];
-  return { casseforti, biglietti, telecamere, porte, sacchi, casse, pulsanti, png, auto, vetrine, blindato, daRubare, oggetti: extra.oggetti, foto, ora: def.ora };
+  return { casseforti, biglietti, telecamere, porte, sacchi, casse, pulsanti, png, auto, vetrine, blindato, daRubare, oggetti: [...propri, ...extra.oggetti], foto, ora: def.ora };
 }
 
 function missione(def, luogo, caso) {

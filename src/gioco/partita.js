@@ -76,7 +76,9 @@ export function creaPartita({ seme, colpo, giocatori = [], campagna = null, ambi
     png: [],
     telecamere: set.telecamere.map(t => ({ ...t, yaw0: t.yaw, stato: 'attiva', sospetto: 0, loopFino: 0, fase: caso({ rng: seme }) * 6 })),
     luogo: luogo.def.id,
-    scadenza: def.scadenza ?? null,
+    scadenza: def.scadenza ?? def.prelievo?.tempo ?? null,
+    antipanico: true,
+    prelievo: def.prelievo ? { ...def.prelievo, avvisi: [] } : null,
     tessera: preparazioni.includes('tessera'),
     fotografie: preparazioni.includes('fotografie'),
     missione: def.preparazione ? { tipo: def.preparazione, fatto: false, foto: [], obiettivi: set.foto ?? [] } : null,
@@ -212,7 +214,7 @@ function panico(stato, p, eventi, silenzioso = false) {
   if (p.stato === 'panico') return;
   p.stato = 'panico';
   p.timer = 0;
-  const pulsante = stato.pulsanti[0];
+  const pulsante = stato.antipanico === false ? null : stato.pulsanti.reduce((m, b) => (!m || Math.hypot(b.x - p.x, b.z - p.z) < Math.hypot(m.x - p.x, m.z - p.z) ? b : m), null);
   p.meta = !stato.allarme.attivo && pulsante && p.tipo === 'titolare' ? { x: pulsante.x, z: pulsante.z, pulsante: true } : { x: p.uscita[0], z: p.uscita[1], fuga: true };
   p.percorso = null;
   if (!silenzioso) eventi.push({ k: 'urlo', x: p.x, z: p.z, id: p.id });
@@ -390,7 +392,7 @@ function aggiornaPng(stato, amb, luogo, dt, eventi) {
         if (arrivato) {
           p.timer += dt;
           if (p.meta.pulsante && p.timer > ATTESA_PULSANTE) {
-            scattaAllarme(stato, `${p.nome ?? 'il titolare'} ha premuto l'antipanico`, eventi);
+            if (stato.antipanico !== false) scattaAllarme(stato, `${p.nome ?? 'il titolare'} ha premuto l'antipanico`, eventi);
             p.meta = { x: p.uscita[0], z: p.uscita[1], fuga: true };
             p.timer = 0;
           } else if (p.meta.fuga) {
@@ -539,6 +541,11 @@ function aggiornaBlindato(stato, amb, dt, eventi) {
 
 function aggiornaCasseforti(stato, dt, eventi) {
   for (const c of stato.casseforti) {
+    if (c.stato === 'ritardo') {
+      c.progresso = Math.min(1, 1 - (c.apreA - stato.tempo) / c.ritardo);
+      if (stato.tempo >= c.apreA) apriCassaforte(stato, c, eventi);
+      continue;
+    }
     if (c.stato !== 'trapano') continue;
     if (c.inceppato) continue;
     c.progresso += dt / c.durata;
@@ -560,6 +567,30 @@ function apriCassaforte(stato, c, eventi) {
   c.bottino.forEach(([tipo, valore], i) => creaSacco(stato, tipo, valore, c.x + fx * (0.7 + i * 0.25) + (i - 1) * 0.3 * fz, 0.25, c.z + fz * (0.7 + i * 0.25) - (i - 1) * 0.3 * fx));
   eventi.push({ k: 'cassaforte', id: c.id });
   messaggio(eventi, 'La cassaforte è aperta! Prendete i sacchi', 'bene');
+}
+
+const AVVISI_PRELIEVO = [90, 30];
+
+function aggiornaPrelievo(stato, eventi) {
+  const pr = stato.prelievo;
+  if (!pr || pr.fatto) return;
+  const resta = pr.tempo - stato.tempo;
+  for (const a of AVVISI_PRELIEVO) {
+    if (resta > a || pr.avvisi.includes(a)) continue;
+    pr.avvisi.push(a);
+    messaggio(eventi, `Il portavalori arriva fra ${a} secondi a ritirare l'incasso`, 'avviso');
+  }
+  if (resta > 0) return;
+  pr.fatto = true;
+  stato.scadenza = null;
+  const c = stato.casseforti.find(x => x.id === pr.cassaforte);
+  if (!c) return;
+  if (c.stato === 'chiusa') {
+    c.stato = 'persa';
+    messaggio(eventi, 'Il portavalori ha ritirato l\'incasso della cassa centrale: troppo tardi', 'allarme');
+  } else if (c.stato === 'ritardo' || c.stato === 'trapano') {
+    scattaAllarme(stato, 'le guardie del portavalori hanno trovato la cassa centrale forzata', eventi);
+  }
 }
 
 function aggiornaSacchi(stato, amb, dt, eventi) {
@@ -735,21 +766,25 @@ export function interazioni(stato, amb, g) {
     for (const t of stato.telecamere) if (!m.foto.includes(t.id)) metti(`fotografa:${t.id}`, t.x, t.z, t.y, 'Fotografa la telecamera', tempoAzione('fotografa', ruolo), { distanza: 16 });
     for (const p of stato.png) if (p.tipo === 'vigilante' && !m.foto.includes(`png:${p.indice}`)) metti(`fotografa:png:${p.indice}`, p.x, p.z, 1.5, 'Fotografa la guardia e il suo giro', tempoAzione('fotografa', ruolo), { distanza: 14 });
   }
-  if (m?.tipo === 'tessera' && !m.fatto) {
+  if (m?.tipo === 'tessera' ? !m.fatto : !m && !stato.tessera) {
     for (const p of stato.png) {
       if (!p.tessera || !['giro', 'sospetto'].includes(p.stato)) continue;
       const spalle = Math.abs(angolo(Math.atan2(-(g.x - p.x), -(g.z - p.z)) - p.yaw)) > 1.9;
       if (spalle) metti(`borseggia:${p.id}`, p.x, p.z, 1.1, 'Sfila la tessera dal giaccone', 3, { distanza: 1.7 });
     }
   }
-  if (m?.tipo === 'linea' && !m.fatto) for (const o of stato.oggetti) metti(`taglia:${o.id}`, o.x, o.z, 0.8, 'Taglia i fili della centralina', tempoAzione('tagliaFili', ruolo));
+  for (const o of stato.oggetti ?? []) {
+    if (o.tipo === 'quadro' && stato.antipanico) metti(`quadro:${o.id}`, o.x, o.z, 1.4, ruolo === 'hacker' ? 'Disattiva gli antipanico dal quadro' : 'Stacca gli antipanico dal quadro (lento)', tempoAzione('quadro', ruolo));
+    if (o.tipo === 'registratore' && stato.telecamere.some(t => t.stato === 'attiva')) metti(`registratore:${o.id}`, o.x, o.z, 0.9, ruolo === 'hacker' ? 'Spegni le telecamere dal videoregistratore' : 'Stacca il videoregistratore (lento)', tempoAzione('registratore', ruolo));
+  }
+  if (m?.tipo === 'linea' && !m.fatto) for (const o of stato.oggetti.filter(x => x.tipo === 'centralina')) metti(`taglia:${o.id}`, o.x, o.z, 0.8, 'Taglia i fili della centralina', tempoAzione('tagliaFili', ruolo));
   for (const v of stato.veicoli) {
     if (!v.daRubare) continue;
     const [x, z] = puntiVeicolo(v).portaGuida;
     metti(`avvia:${v.id}`, x, z, 1, ruolo === 'autista' ? 'Avvia il furgone senza chiavi' : 'Forza il blocchetto (scatta l\'allarme)', tempoAzione('avvioSenzaChiavi', ruolo), { distanza: 2.2 });
   }
   for (const c of stato.casseforti) {
-    if (c.stato === 'aperta' || c.stato === 'persa') continue;
+    if (c.stato === 'aperta' || c.stato === 'persa' || c.stato === 'ritardo') continue;
     if (c.suVeicolo && !stato.blindatoFermo) continue;
     if (c.stato === 'trapano') {
       if (c.inceppato) metti(`riavvia:${c.id}`, c.x, c.z, 0.8, 'Riavvia il trapano', 1.5, { maschera: true });
@@ -848,7 +883,29 @@ function completaUso(stato, amb, g, chiave, eventi) {
     case 'codice':
     case 'orecchio': {
       const c = stato.casseforti.find(x => x.id === id);
-      if (c) apriCassaforte(stato, c, eventi);
+      if (!c) break;
+      if (c.ritardo && !c.suVeicolo) {
+        c.stato = 'ritardo';
+        c.apreA = stato.tempo + c.ritardo;
+        c.progresso = 0;
+        eventi.push({ k: 'ritardo', id: c.id });
+        messaggio(eventi, `Serratura a tempo inserita: la cassa si apre fra ${c.ritardo} secondi. Tenete la posizione`, 'avviso');
+      } else apriCassaforte(stato, c, eventi);
+      break;
+    }
+    case 'quadro': {
+      stato.antipanico = false;
+      eventi.push({ k: 'quadro', x: g.x, z: g.z });
+      messaggio(eventi, 'Antipanico disattivati: i pulsanti sotto le casse non chiamano più nessuno', 'bene');
+      break;
+    }
+    case 'registratore': {
+      for (const t of stato.telecamere) if (t.stato === 'attiva') {
+        t.stato = 'loop';
+        t.loopFino = Infinity;
+        t.sospetto = 0;
+      }
+      messaggio(eventi, 'Videoregistratore staccato: le telecamere non registrano più', 'bene');
       break;
     }
     case 'trapano':
@@ -932,16 +989,18 @@ function completaUso(stato, amb, g, chiave, eventi) {
     }
     case 'borseggia': {
       const p = stato.png.find(x => x.id === Number(id));
-      if (!p || !stato.missione) break;
+      if (!p) break;
       const spalle = Math.abs(angolo(Math.atan2(-(g.x - p.x), -(g.z - p.z)) - p.yaw)) > 1.6;
       if (!spalle) {
         messaggio(eventi, 'Il direttore se n\'è accorto!', 'allarme');
         panico(stato, p, eventi);
         break;
       }
-      stato.missione.fatto = true;
       stato.tessera = true;
-      messaggio(eventi, 'Tessera presa: allontanatevi senza correre e tornate al rifugio', 'bene');
+      if (stato.missione) {
+        stato.missione.fatto = true;
+        messaggio(eventi, 'Tessera presa: allontanatevi senza correre e tornate al rifugio', 'bene');
+      } else messaggio(eventi, 'Tessera presa: non se n\'è accorto', 'bene');
       break;
     }
     case 'taglia': {
@@ -1356,6 +1415,7 @@ export function passo(stato, dt, { posizioni = {}, azioni = [] } = {}, amb) {
   aggiornaChiavi(stato, eventi);
   aggiornaBlindato(stato, amb, dt, eventi);
   aggiornaCasseforti(stato, dt, eventi);
+  aggiornaPrelievo(stato, eventi);
   aggiornaSacchi(stato, amb, dt, eventi);
   aggiornaPolizia(stato, amb, dt, eventi);
   aggiornaVolanti(stato, amb, dt, eventi);

@@ -66,9 +66,10 @@ try {
   const tavolo = await host.evaluate(() => window.__gioco.interazione()?.chiave);
   verifica('al tavolo si apre la mappa', tavolo === 'ui:mappa', tavolo);
 
-  await host.evaluate(() => window.__gioco.parti('tabaccheria'));
-  const inColpo = await attendi(ospite, () => window.__gioco.stato().vista?.colpo === 'tabaccheria', 20000);
-  verifica('tutti e due entrano nel colpo della tabaccheria', inColpo);
+  await ospite.evaluate(() => window.__gioco.azione({ tipo: 'scegli', colpo: 'tabaccheria' }));
+  const inColpo = await attendi(ospite, () => window.__gioco.stato().vista?.colpo === 'tabaccheria', 20000)
+    && await attendi(host, () => window.__gioco.stato().vista?.colpo === 'tabaccheria', 20000);
+  verifica("l'amico sceglie il colpo e tutti e due ci entrano", inColpo);
   await host.waitForTimeout(3000);
   await foto(host, '02-arrivo-host');
   await foto(ospite, '02-arrivo-ospite');
@@ -172,9 +173,13 @@ try {
   const soldi = await host.evaluate(() => window.__gioco.stato().riassunto.giocatori);
   verifica('il bottino è spartito fra i due', soldi.Richi?.soldi > 2500 && soldi.Seba?.soldi > 2500, JSON.stringify(soldi));
 
-  await host.click('#torna');
-  const ritorno = await attendi(ospite, () => window.__gioco.stato().vista?.fase === 'rifugio', 15000);
-  verifica('si torna al rifugio insieme', ritorno);
+  await ospite.click('#torna');
+  const ritorno = await attendi(host, () => window.__gioco.stato().vista?.fase === 'rifugio', 15000)
+    && await attendi(ospite, () => window.__gioco.stato().vista?.fase === 'rifugio', 15000);
+  verifica("l'amico riporta tutti al rifugio", ritorno);
+  await host.evaluate(() => window.__gioco.partiSenzaAvviso('tabaccheria'));
+  const segue = await attendi(ospite, () => window.__gioco.stato().vista?.colpo === 'tabaccheria' && window.__gioco.stato().vista?.giocatori.length === 2, 15000);
+  verifica("se l'avviso di partenza si perde, l'amico segue lo stesso", segue);
   const sbloccato = await host.evaluate(() => window.__gioco.stato().riassunto.colpi);
   verifica('il colpo successivo è sbloccato', Object.values(sbloccato).filter(c => c.sbloccato).length >= Math.min(2, Object.keys(sbloccato).length), JSON.stringify(Object.fromEntries(Object.entries(sbloccato).map(([k, v]) => [k, v.sbloccato]))));
   for (const e of [...new Set(errori)].slice(0, 12)) console.log('   errore:', e);

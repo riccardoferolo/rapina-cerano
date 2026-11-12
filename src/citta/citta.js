@@ -55,6 +55,8 @@ function sponde(collisioni, dati) {
   }
 }
 
+const INGOMBRI_ARREDI = Object.freeze({ stop: [0.08, 'palo'], precedenza: [0.08, 'palo'], fermata: [0.08, 'palo'], semaforo: [0.1, 'palo'], fontanella: [0.25, 'palo'], fontana: [1.85, 'basso'], monumento: [1.6, 'muro'], stele: [0.6, 'muro'] });
+
 export function preparaCitta(dati, { esclusi = new Set() } = {}) {
   const collisioni = creaCollisioni();
   const edifici = dati.edifici.filter(e => !esclusi.has(e.id));
@@ -67,6 +69,10 @@ export function preparaCitta(dati, { esclusi = new Set() } = {}) {
     collisioni.aggiungiAnello(e.p, 'muro', { edificio: e.id });
   }
   for (const [x, z, , muro] of dati.lampioni) if (!muro) collisioni.aggiungiCerchio(x, z, RAGGIO_PALO, 'palo');
+  for (const [tipo, x, z] of dati.arredi ?? []) {
+    const ingombro = INGOMBRI_ARREDI[tipo];
+    if (ingombro) collisioni.aggiungiCerchio(x, z, ...ingombro);
+  }
   for (const [x, z, s] of dati.alberi) if (Math.hypot(x, z) < ALBERI_COLLIDONO_ENTRO) collisioni.aggiungiCerchio(x, z, RAGGIO_TRONCO * s, 'albero');
   sponde(collisioni, dati);
   const l = dati.limite;

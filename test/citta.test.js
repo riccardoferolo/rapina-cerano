@@ -80,3 +80,25 @@ test('i marciapiedi sono rialzati e interrotti agli incroci', () => {
   });
   assert.ok(rialzati > 40, `marciapiedi rialzati trovati: ${rialzati}`);
 });
+
+test('le altezze degli edifici vengono dal rilievo BDTRE per la maggior parte della città', () => {
+  const misurati = dati.edifici.filter(e => e.hr);
+  assert.ok(misurati.length / dati.edifici.length > 0.6, `solo ${misurati.length} su ${dati.edifici.length}`);
+  const supermercato = dati.edifici.find(e => e.id === 1239347530);
+  assert.equal(supermercato.hr, 1);
+  assert.ok(supermercato.h > 7 && supermercato.h < 11, `altezza ${supermercato.h}`);
+  assert.ok(misurati.every(e => e.h >= 2.4 && e.h < 25), 'altezza misurata fuori scala');
+});
+
+test('l\'arredo urbano vero di OpenStreetMap è nella mappa e si urta', () => {
+  const conta = t => dati.arredi.filter(a => a[0] === t).length;
+  assert.ok(conta('strisce') >= 30, `strisce ${conta('strisce')}`);
+  assert.ok(conta('stop') >= 60, `stop ${conta('stop')}`);
+  assert.ok(conta('fermata') >= 15, `fermate ${conta('fermata')}`);
+  const fontana = dati.arredi.find(a => a[0] === 'fontana' && a[4] === 'Fontana Beato Pacifico');
+  assert.ok(fontana, 'manca la fontana di Piazza Crespi');
+  assert.ok(Math.hypot(fontana[1] + 35, fontana[2] - 24) < 2, `fontana fuori posto: ${fontana[1]},${fontana[2]}`);
+  assert.equal(citta.collisioni.respingi(fontana[1] + 0.5, fontana[2], 0.3).urto, true);
+  const caduti = dati.arredi.find(a => a[0] === 'monumento' && a[4] === 'Monumento ai Caduti');
+  assert.ok(caduti, 'manca il Monumento ai Caduti');
+});

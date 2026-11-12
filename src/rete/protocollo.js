@@ -50,7 +50,7 @@ function eIstantanea(i) {
     && elenco(i.po, tupla(3, x => testo(x, 24), numero, numero), 30)
     && elenco(i.cf, tupla(4), 10)
     && elenco(i.bl, numero, 10) && elenco(i.ca, numero, 10) && elenco(i.vt, tupla(2), 30)
-    && tupla(5)(i.al) && tupla(3)(i.fu) && tupla(6)(i.mi)
+    && tupla(5)(i.al) && tupla(3)(i.fu) && tupla(7)(i.mi)
     && (i.es === null || (typeof i.es === 'object' && typeof i.es.vinto === 'boolean'));
 }
 

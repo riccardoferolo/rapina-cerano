@@ -221,7 +221,7 @@ function iniziaPartita(seme, colpo) {
   arsenale.attiva = 0;
   if (s.sonoHost) {
     const giocatori = [datiGiocatore(s.mioId, s.nome, s.ruolo)];
-    for (const [id, o] of s.ospiti) if (s.coll.collegato(id)) giocatori.push(datiGiocatore(id, o.nome, o.ruolo));
+    for (const [id, o] of s.ospiti) giocatori.push(datiGiocatore(id, o.nome, o.ruolo));
     const preparazioni = colpo && s.campagna ? camp.preparazioniFatte(s.campagna, colpo) : [];
     const campagna = { attrezzi: {}, preparazioni, veicolo: colpo && s.campagna ? camp.veicoloColpo(s.campagna, colpo) : 'utilitaria' };
     s.partita = colpo ? creaPartita({ seme, colpo, giocatori, campagna, ambiente: amb }) : creaRifugio({ seme, giocatori, campagna, ambiente: amb });
@@ -234,6 +234,11 @@ function iniziaPartita(seme, colpo) {
   comandi.attiva(true);
   document.activeElement?.blur();
   hud.messaggio(colpo ? `${def.nome} — ${def.via}` : `${RIFUGIO.nome}: la mappa è sul tavolo (F)`, 'info');
+}
+
+function scegliColpo(colpo) {
+  if (s.sonoHost) partiComeHost(colpo === 'rifugio' ? null : colpo);
+  else inviaAzione({ tipo: 'scegli', colpo });
 }
 
 function partiComeHost(colpo = null) {
@@ -275,16 +280,22 @@ function suMessaggio(m, da) {
     case 'g': {
       const ospite = s.sonoHost ? s.ospiti.get(da) : null;
       if (!ospite) return;
+      riprendiOspite(da);
       ospite.remoto = { x: m.x, z: m.z, yaw: m.yaw, pitch: m.pitch, chino: m.chino, corsa: m.corsa, tp: m.tp, veicolo: m.veicolo };
       return;
     }
     case 'az':
       if (!s.sonoHost || !s.ospiti.has(da)) return;
+      riprendiOspite(da);
       if (s.azioniRemote.length >= AZIONI_REMOTE_MASSIME) s.azioniRemote.shift();
       s.azioniRemote.push({ ...m.a, da });
       return;
     case 'st': {
-      if (s.sonoHost || m.g !== s.semeCorrente || s.fase !== 'gioco') return;
+      if (s.sonoHost || s.fase === 'inizio') return;
+      if (m.g !== s.semeCorrente || m.ist.c !== s.colpoCorrente) {
+        iniziaPartita(m.g, m.ist.c);
+        return;
+      }
       const ultima = s.buffer[s.buffer.length - 1];
       if (ultima && m.ist.t <= ultima.tempo) return;
       const arrivo = performance.now();
@@ -310,6 +321,12 @@ function suMessaggio(m, da) {
   }
 }
 
+function riprendiOspite(id) {
+  const o = s.ospiti.get(id);
+  if (s.fase !== 'gioco' || !s.partita || !o || s.partita.giocatori.some(g => g.id === id)) return;
+  aggiungiGiocatore(s.partita, datiGiocatore(id, o.nome, o.ruolo));
+}
+
 function eseguiAzioniHost(azioni) {
   const resto = [];
   for (const a of azioni) {
@@ -325,7 +342,13 @@ function eseguiAzioniHost(azioni) {
       if (s.pannello) aggiornaPannello();
       continue;
     }
-    if (a.tipo === 'scegli') continue;
+    if (a.tipo === 'scegli') {
+      const scelto = a.colpo === 'rifugio' ? null : a.colpo;
+      const def = scelto ? definizione(scelto) : null;
+      const base = def?.preparazione ? def.per : scelto;
+      if (!scelto || !s.campagna || camp.sbloccato(s.campagna, base)) s.daAvviare = { colpo: scelto };
+      continue;
+    }
     resto.push(a);
   }
   return resto;
@@ -422,6 +445,12 @@ function tickHost(dt, ora) {
       s.accumulo -= R.PASSO;
     }
     s.ultimoTickHost = ora;
+    if (s.daAvviare) {
+      const { colpo } = s.daAvviare;
+      s.daAvviare = null;
+      partiComeHost(colpo);
+      return;
+    }
     if (eventi.length && collegato()) s.coll.invia({ t: 'ev', eventi });
     if (eventi.length) suEventi(eventi);
     const fine = eventi.find(e => e.k === 'fine');
@@ -732,13 +761,20 @@ function obiettivo(vista, me) {
       furgone: 'Il furgone bianco è nel piazzale: l\'autista lo avvia in silenzio, gli altri fanno scattare l\'antifurto.',
     }[def.preparazione];
   }
-  const chiuse = vista.casseforti.filter(c => c.stato === 'chiusa' || c.stato === 'trapano').length;
+  const chiuse = vista.casseforti.filter(c => c.stato === 'chiusa' || c.stato === 'trapano' || c.stato === 'ritardo').length;
   const sparsi = vista.sacchi.filter(k => !k.portato && k.veicolo === null).length;
   if (def.id === 'furgone' && chiuse) return `Blindato in sosta in Via Novara${vista.scadenza !== null ? `: riparte fra ${Math.ceil(vista.scadenza)} s` : ''}. Le chiavi del portellone le ha una guardia (stendila o falla arrendere), oppure il trapano.`;
   if (chiuse) {
     const cf = s.set?.casseforti[0];
     const extra = vista.casseforti[0]?.codiceNoto ? ` (combinazione ${cf?.codice})` : ': cercate il foglietto con la combinazione';
     if (def.id === 'banca') return `Caveau: la porta elettronica la apre l'hacker, quella del caveau la tessera del direttore${vista.tessera ? ' (l\'avete)' : ''}. Poi la cassaforte grande${extra}.`;
+    if (def.id === 'supermercato') {
+      const cassa = vista.casseforti[0];
+      const portavalori = vista.scadenza !== null ? ` Il portavalori arriva fra ${Math.ceil(vista.scadenza)} s.` : '';
+      if (cassa?.stato === 'ritardo') return `Serratura a tempo: la cassa centrale si apre fra ${Math.ceil((1 - cassa.progresso) * (cf?.ritardo ?? 40))} s. Tenete la posizione.${portavalori}`;
+      if (cassa?.stato === 'trapano') return `Il trapano lavora sulla cassa centrale: tenete lontani clienti e guardie.${portavalori}`;
+      return `Cassa centrale nel retro: la porta vuole la tessera del direttore${vista.tessera ? ' (l\'avete)' : ', che la tiene nel giaccone'}, la cassaforte ha la serratura a tempo${extra}.${vista.antipanico ? ' Gli antipanico si staccano dal quadro della sala sicurezza.' : ' Antipanico staccati.'}${portavalori}`;
+    }
     if (def.id === 'municipio') return `Tesoreria del Municipio: porta blindata (serve il trapano), poi la cassaforte grande${extra}.`;
     return `${def.nome}, ${def.via}. Aprite la cassaforte${extra}.`;
   }
@@ -772,12 +808,12 @@ function aggiornaPannello() {
       const aperto = c?.sbloccato ?? def.ordine === 1;
       const preps = (def.preparazioni ?? []).map(id => {
         const fatta = c?.preparazioni?.includes(id);
-        return `<span class="prep ${fatta ? 'fatta' : ''}">${fatta ? '✓ ' : ''}${PREPARAZIONI[id].nome}${s.sonoHost && aperto && !fatta ? ` <button data-colpo="prep:${id}">Vai</button>` : ''}</span>`;
+        return `<span class="prep ${fatta ? 'fatta' : ''}">${fatta ? '✓ ' : ''}${PREPARAZIONI[id].nome}${aperto && !fatta ? ` <button data-colpo="prep:${id}">Vai</button>` : ''}</span>`;
       }).join('');
       return `<div class="colpo ${aperto ? '' : 'chiuso'}"><div><h3>${def.ordine}. ${def.nome}</h3><p>${def.via} — ${def.breve}</p><p>${c?.fatti ? `Fatto ${c.fatti} volte, migliore ${euro(c.migliore)}` : aperto ? 'Mai tentato' : 'Si sblocca col colpo precedente'}</p>${preps ? `<div class="preps">${preps}</div>` : ''}</div>
-        <div>${s.sonoHost && aperto ? `<button class="primario" data-colpo="${def.id}">Si parte</button>` : ''}</div></div>`;
-    }).join('')}</div><p class="tasti">${s.sonoHost ? 'Le preparazioni sono facoltative ma decisive. Si parte tutti insieme.' : `Sceglie ${s.nomeHost ?? 'chi ha creato la stanza'}.`}</p>`;
-    corpo.querySelectorAll('[data-colpo]').forEach(b => b.addEventListener('click', () => partiComeHost(b.dataset.colpo)));
+        <div>${aperto ? `<button class="primario" data-colpo="${def.id}">Si parte</button>` : ''}</div></div>`;
+    }).join('')}</div><p class="tasti">Le preparazioni sono facoltative ma decisive. Chiunque della banda può scegliere: si parte tutti insieme.</p>`;
+    corpo.querySelectorAll('[data-colpo]').forEach(b => b.addEventListener('click', () => scegliColpo(b.dataset.colpo)));
   } else if (s.pannello === 'banco') {
     $('pannello-titolo').textContent = 'Banco degli attrezzi';
     const mia = ria?.giocatori?.[s.nome] ?? { soldi: 0, attrezzi: [], potenziamenti: [] };
@@ -793,8 +829,8 @@ function aggiornaPannello() {
     corpo.innerHTML = `<div class="esito"><h3>${e?.preparazione ? (e.vinto ? PREPARAZIONI[e.preparazione]?.nome ?? '' : 'Da rifare') : e?.vinto ? euro(e.totale) : 'Niente bottino'}</h3>
       <p>${e?.vinto ? `${e.sacchi} sacchi, ${e.pulito ? 'senza allarme (+20%)' : 'con l\'allarme'} in ${Math.floor(e.durata / 60)} min ${e.durata % 60} s` : 'La polizia vi ha presi.'}</p>
       <table>${(e?.giocatori ?? []).map(g => `<tr><td>${g.nome}</td><td>${RUOLI[g.ruolo]?.nome ?? ''}</td><td>${g.stato === 'arrestato' ? 'arrestato' : 'libero'}</td><td>${e.quote?.find(q => q.nome === g.nome) ? euro(e.quote.find(q => q.nome === g.nome).quota) : ''}</td></tr>`).join('')}</table>
-      ${s.sonoHost ? '<button class="primario" id="torna">Torna al rifugio</button>' : `<p>Aspetta che ${s.nomeHost ?? 'l\'host'} vi riporti al rifugio.</p>`}</div>`;
-    $('torna')?.addEventListener('click', () => partiComeHost(null));
+      <button class="primario" id="torna">Torna al rifugio</button></div>`;
+    $('torna')?.addEventListener('click', () => scegliColpo('rifugio'));
   }
 }
 
@@ -1047,6 +1083,7 @@ if (import.meta.env.DEV) {
     },
     azione: a => inviaAzione(a),
     parti: colpo => partiComeHost(colpo),
+    partiSenzaAvviso: colpo => iniziaPartita(semeCasuale(), colpo),
     mondo: () => mondo,
     interazione: () => scegliInterazione(s.vista, s.vista?.giocatori.find(g => g.id === s.mioId)),
     spara: () => {

@@ -4,6 +4,7 @@ import { creaMateriali, luceFinestre } from './materiali.js';
 import { costruisciCitta } from './citta3d.js';
 import { costruisciAlberi } from './alberi3d.js';
 import { costruisciLampioni } from './lampioni3d.js';
+import { costruisciArredi } from './arredi3d.js';
 import { creaAtmosfera } from './atmosfera.js';
 
 const FOV = 72;
@@ -38,6 +39,7 @@ export async function creaMondo(contenitore, citta, { ora = 'tramonto', esclusi 
     esclusoDa: (x, z) => citta.edificioIn(x, z) !== null,
   });
   const lampioni = costruisciLampioni(scena, citta.dati, { luci: q.luci, quota: citta.quota });
+  costruisciArredi(scena, citta.dati, { quota: citta.quota });
 
   function impostaOra(nome) {
     const o = atmosfera.imposta(nome);
@@ -108,6 +110,9 @@ export async function creaMondo(contenitore, citta, { ora = 'tramonto', esclusi 
     get ora() { return atmosfera.ora; },
     get scala() { return scala; },
     impostaOra,
+    alChiuso(chiuso) {
+      renderer.shadowMap.autoUpdate = !chiuso;
+    },
     aggiungiAggiornatore(f) {
       aggiornatori.add(f);
       return () => aggiornatori.delete(f);

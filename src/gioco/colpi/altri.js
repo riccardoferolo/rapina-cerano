@@ -1,6 +1,6 @@
 export const FURGONE = Object.freeze({
   id: 'furgone',
-  ordine: 2,
+  ordine: 3,
   nome: 'Furgone portavalori «Blindati Ovesticino»',
   breve: 'Alle dieci il blindato si ferma in Via Novara: due guardie, quattro minuti, poi riparte.',
   via: 'Via Novara',
@@ -22,7 +22,7 @@ export const FURGONE = Object.freeze({
 
 export const OREFICERIA = Object.freeze({
   id: 'oreficeria',
-  ordine: 3,
+  ordine: 4,
   nome: 'Oreficeria «La Spiga d\'Oro»',
   breve: 'Vetrinette di gioielli, una guardia giurata, tre telecamere, la cassaforte dell\'oro nel laboratorio.',
   via: 'Via Giuseppe Mazzini',
@@ -86,7 +86,7 @@ export const OREFICERIA = Object.freeze({
 
 export const BANCA = Object.freeze({
   id: 'banca',
-  ordine: 4,
+  ordine: 5,
   nome: 'Credito Rurale Ceranese',
   breve: 'Tre guardie, il direttore con la tessera, la porta elettronica e il caveau a tempo con le cassette di sicurezza.',
   via: 'Via Giacomo Matteotti',
@@ -161,7 +161,7 @@ export const BANCA = Object.freeze({
 
 export const MUNICIPIO = Object.freeze({
   id: 'municipio',
-  ordine: 5,
+  ordine: 6,
   nome: 'Caveau del Municipio',
   breve: 'Di notte, in Piazza Crespi: quattro guardie, cinque telecamere, la porta blindata della tesoreria.',
   via: 'Piazza Crespi',

@@ -12,6 +12,16 @@ const SPESSORE_MURO = 0.12;
 const SPORTO = 0.45;
 const PENDENZA = Math.tan((27 * Math.PI) / 180);
 const COLORI_PRODOTTI = [0xc8102e, 0xf2f2f2, 0x1d3f8f, 0xd4af37, 0x111111, 0x2e7d32, 0xe57c23, 0x6d2b8f];
+const MERCI = {
+  pasta: [0x1d3f8f, 0xf2c230, 0xc8102e, 0xf5efe0, 0x2a5fb0, 0xe8a317, 0x3a7a2a],
+  conserve: [0xc8102e, 0x2e7d32, 0xe57c23, 0xd4af37, 0x8b1a1a, 0xf2e6c8, 0x5a7a1a],
+  casa: [0x2a7fd4, 0xf2f2f2, 0x6d2b8f, 0x2fb6a8, 0xff8fb0, 0x8fd14f, 0xf5d000],
+  bevande: [0x1f6f3f, 0xd61a1a, 0x1a1a1a, 0xf5a623, 0x7fc8f0, 0xe8e0c0, 0x7a1a3a],
+  freddo: [0xf2f2f2, 0x7fb3e0, 0xf0d060, 0xe05050, 0xdedede],
+  latte: [0xf7f7f7, 0x2a6fd0, 0xf0d060, 0xe05050, 0x5ab55a, 0xf2e6c8],
+  surgelati: [0x2a6fd0, 0xf5f5f5, 0xe8a317, 0x3a8f3a, 0xc8102e],
+};
+const FRUTTA = [0xf28c1a, 0xd8261c, 0x8cbf3f, 0xf2d43a, 0x6b2a5a, 0x3f8f2f, 0xe8b04a];
 
 function caricaTexture(caricatore, nome, ripeti = 1, colore = true) {
   const t = caricatore.load(`./texture/${nome}.jpg`);
@@ -43,6 +53,97 @@ function texturaInsegna(testo, sfondo = '#0d2f6e', colore = '#ffffff', tabacchi 
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function texturaCartello(testo, stile, largo, alto) {
+  const c = document.createElement('canvas');
+  c.height = 160;
+  c.width = Math.min(2048, Math.round((160 * largo) / alto));
+  const ctx = c.getContext('2d');
+  const [sfondo, inchiostro, bordo] = stile === 'offerta' ? ['#f7d417', '#c4161c', '#c4161c'] : stile === 'cassa' ? ['#f4f4f0', '#1f5a2a', '#1f5a2a'] : ['#1f5a2a', '#ffffff', '#e8c84a'];
+  ctx.fillStyle = sfondo;
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = bordo;
+  ctx.fillRect(0, c.height - 12, c.width, 12);
+  ctx.fillStyle = inchiostro;
+  ctx.font = `bold ${stile === 'cassa' ? 104 : 88}px Arial, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(testo, c.width / 2, c.height / 2 - 4, c.width - 40);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
+function texturaSchermo() {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 160;
+  const ctx = c.getContext('2d');
+  const caso = creaCaso(11);
+  for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+    const g = ctx.createLinearGradient(0, j * 80, 0, j * 80 + 80);
+    const base = 40 + Math.floor(caso() * 50);
+    g.addColorStop(0, `rgb(${base},${base + 8},${base + 4})`);
+    g.addColorStop(1, `rgb(${base + 60},${base + 62},${base + 58})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(i * 128 + 2, j * 80 + 2, 124, 76);
+    ctx.fillStyle = 'rgba(20,20,20,0.6)';
+    for (let k = 0; k < 4; k++) ctx.fillRect(i * 128 + 10 + caso() * 90, j * 80 + 30 + caso() * 30, 10 + caso() * 25, 20 + caso() * 20);
+    ctx.fillStyle = '#e8e8e8';
+    ctx.font = '11px monospace';
+    ctx.fillText(`CAM 0${i + j * 2 + 1}  19:02`, i * 128 + 6, j * 80 + 14);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+function texturaGres() {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 512;
+  const ctx = c.getContext('2d');
+  const caso = creaCaso(23);
+  const lato = 128;
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+    const t = 200 + Math.floor(caso() * 10);
+    ctx.fillStyle = `rgb(${t},${t - 3},${t - 9})`;
+    ctx.fillRect(i * lato, j * lato, lato, lato);
+    for (let k = 0; k < 260; k++) {
+      const s = t - 30 + Math.floor(caso() * 60);
+      ctx.fillStyle = `rgba(${s},${s - 4},${s - 10},0.35)`;
+      ctx.fillRect(i * lato + caso() * lato, j * lato + caso() * lato, 1 + caso() * 2, 1 + caso() * 2);
+    }
+  }
+  ctx.fillStyle = '#8f8b84';
+  for (let k = 0; k <= 4; k++) {
+    ctx.fillRect(k * lato - 1, 0, 3, 512);
+    ctx.fillRect(0, k * lato - 1, 512, 3);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+function texturaGriglia() {
+  const c = document.createElement('canvas');
+  c.width = 32;
+  c.height = 32;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, 32, 32);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, 32, 4);
+  ctx.fillRect(0, 0, 4, 32);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(14, 14);
   return t;
 }
 
@@ -87,13 +188,22 @@ export function creaMaterialiInterni() {
     acciaio: new THREE.MeshStandardMaterial({ color: 0x4a4f55, roughness: 0.32, metalness: 0.85 }),
     nero: new THREE.MeshStandardMaterial({ color: 0x151618, roughness: 0.5, metalness: 0.3 }),
     vetro: new THREE.MeshPhysicalMaterial({ color: 0x9fb8c8, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide }),
-    prodotti: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 }),
+    prodotti: Object.assign(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 }), { userData: { senzaOmbra: true } }),
     cartone: new THREE.MeshStandardMaterial({ color: 0xa57c4f, roughness: 0.9 }),
     luce: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff4e0, emissiveIntensity: 2.2 }),
     rosso: new THREE.MeshStandardMaterial({ color: 0xc81e1e, emissive: 0x400000, roughness: 0.4 }),
     led: new THREE.MeshBasicMaterial({ color: 0xff2020 }),
     carta: new THREE.MeshStandardMaterial({ color: 0xf2efe6, roughness: 0.9 }),
     pietra: new THREE.MeshStandardMaterial({ map: caricaTexture(car, 'cemento_diff'), color: 0x8f8a80, roughness: 0.85 }),
+    smalto: new THREE.MeshStandardMaterial({ color: 0xe9ebe8, roughness: 0.35, metalness: 0.1 }),
+    gres: new THREE.MeshStandardMaterial({ map: texturaGres(), roughness: 0.28, metalness: 0.02 }),
+    gomma: new THREE.MeshStandardMaterial({ color: 0x1b1c1e, roughness: 0.8 }),
+    luceFrigo: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xe8f2ff, emissiveIntensity: 1.8 }),
+    schermo: (() => {
+      const tex = texturaSchermo();
+      return new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.8, roughness: 0.3 });
+    })(),
+    griglia: new THREE.MeshStandardMaterial({ color: 0xb8bdc2, roughness: 0.35, metalness: 0.8, alphaMap: texturaGriglia(), alphaTest: 0.5, side: THREE.DoubleSide }),
   };
 }
 
@@ -134,7 +244,12 @@ function strumenti(luogo, costruttore) {
     const w = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => P(u, y1, v));
     quad(b, w[0], w[1], w[2], w[3], [0, 1, 0], [[0, 0], [(u1 - u0) / uv, 0], [(u1 - u0) / uv, (v1 - v0) / uv], [0, (v1 - v0) / uv]], colore);
   };
-  return { P, N, parete, piano, scatola };
+  const tappo = (mat, u0, v0, u1, v1, y, colore = BIANCO) => {
+    const b = costruttore.buffer(mat);
+    const w = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].map(([u, v]) => P(u, y, v));
+    quad(b, w[0], w[1], w[2], w[3], [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]], colore);
+  };
+  return { P, N, parete, piano, scatola, tappo };
 }
 
 function aperture(def, lato, W, D) {
@@ -269,6 +384,19 @@ export function costruisciLuogo(scena, luogo, matCitta, mat) {
   }
   const caso = creaCaso(7);
   for (const a of luogo.arredi) arredo(t, mat, a, caso);
+  for (const c of def.cartelli ?? []) {
+    if (c.appeso === false) continue;
+    const largo = c.largo ?? 1.7;
+    const altoC = c.stile === 'cassa' ? 0.26 : 0.34;
+    const verso = c.verso ?? 0;
+    const su = Math.cos(verso);
+    const sv = -Math.sin(verso);
+    for (const k of [-1, 1]) {
+      const u = c.u + su * k * (largo / 2 - 0.12);
+      const v = c.v + sv * k * (largo / 2 - 0.12);
+      t.scatola(mat.acciaio, u - 0.006, v - 0.006, u + 0.006, v + 0.006, c.y + altoC / 2, alto);
+    }
+  }
   for (const v of def.pianta.vetrine ?? []) {
     const n = [0, -1];
     t.parete(mat.vetro, v.u0, 0.03, v.u1, 0.03, v.da, v.da + v.alta, n, 2);
@@ -294,6 +422,21 @@ export function costruisciLuogo(scena, luogo, matCitta, mat) {
     gruppo.add(insegna);
     gruppo.userData.insegna = insegna;
   }
+  for (const c of def.cartelli ?? []) {
+    const largo = c.largo ?? 1.7;
+    const altoC = c.stile === 'offerta' ? 0.55 : c.stile === 'cassa' ? 0.26 : 0.34;
+    const tex = texturaCartello(c.testo, c.stile, largo, altoC);
+    const materiale = new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.18, roughness: 0.6 });
+    const geo = new THREE.PlaneGeometry(largo, altoC);
+    const [x, z] = luogo.mondo(c.u, c.v);
+    const rot = luogo.versoMondo(c.verso ?? 0);
+    for (const giro of c.appeso === false ? [0] : [0, Math.PI]) {
+      const m = new THREE.Mesh(geo, materiale);
+      m.position.set(x, BASE_INTERNI + c.y, z);
+      m.rotation.y = rot + giro;
+      gruppo.add(m);
+    }
+  }
   const luci = luogo.stanze.flatMap(s => (s.luci ?? []).map(([u, v]) => {
     const [x, z] = luogo.mondo(u, v);
     return { x, y: alto - 0.3, z, dentro: true, luogo: def.id };
@@ -301,9 +444,171 @@ export function costruisciLuogo(scena, luogo, matCitta, mat) {
   return { gruppo, luci, mat };
 }
 
+function telaio(t, a, lato) {
+  const lungoU = a.u1 - a.u0 > a.v1 - a.v0;
+  const L = lungoU ? a.u1 - a.u0 : a.v1 - a.v0;
+  const P = lungoU ? a.v1 - a.v0 : a.u1 - a.u0;
+  const rett = (s0, s1, d0, d1) => {
+    const f = lungoU ? (lato > 0 ? a.v1 : a.v0) : lato > 0 ? a.u1 : a.u0;
+    const p = f - lato * d0;
+    const q = f - lato * d1;
+    return lungoU ? [a.u0 + s0, Math.min(p, q), a.u0 + s1, Math.max(p, q)] : [Math.min(p, q), a.v0 + s0, Math.max(p, q), a.v0 + s1];
+  };
+  const box = (m, s0, s1, d0, d1, y0, y1, col = BIANCO) => t.scatola(m, ...rett(s0, s1, d0, d1), y0, y1, col);
+  const fronte = (m, s0, s1, d, y0, y1, col = BIANCO) => {
+    const [ua, va, ub, vb] = rett(s0, s1, d, d);
+    t.parete(m, ua, va, lungoU ? ub : ua, lungoU ? va : vb, y0, y1, lungoU ? [0, lato] : [lato, 0], 1, col);
+  };
+  const sopra = (m, s0, s1, d0, d1, y, col = BIANCO) => t.tappo(m, ...rett(s0, s1, d0, d1), y, col);
+  return { L, P, box, fronte, sopra };
+}
+
+function fila(f, mat, caso, palette, s0, s1, d0, d1, y, hMax, bottiglie = false) {
+  let s = s0;
+  while (s < s1 - 0.08) {
+    const col = new THREE.Color(palette[Math.floor(caso() * palette.length)]);
+    const c = [col.r, col.g, col.b];
+    const w = bottiglie ? 0.075 + caso() * 0.025 : 0.06 + caso() * 0.1;
+    const h = Math.min(hMax, bottiglie ? 0.24 + caso() * 0.1 : 0.1 + caso() * 0.22);
+    const n = 2 + Math.floor(caso() * 4);
+    for (let k = 0; k < n && s + w < s1; k++) {
+      f.fronte(mat.prodotti, s, s + w - 0.006, d0, y, y + h, c);
+      f.sopra(mat.prodotti, s, s + w - 0.006, d0, d1, y + h, c);
+      s += w;
+    }
+    s += 0.01 + caso() * 0.03;
+  }
+}
+
 function arredo(t, mat, a, caso) {
   const { u0, v0, u1, v1, alto } = a;
   switch (a.tipo) {
+    case 'corsia': {
+      const pal = MERCI[a.merce] ?? COLORI_PRODOTTI;
+      const bottiglie = a.merce === 'bevande';
+      const f0 = telaio(t, a, 1);
+      const { L, P } = f0;
+      f0.box(mat.smalto, 0, L, P / 2 - 0.025, P / 2 + 0.025, 0, alto);
+      f0.box(mat.smalto, 0, 0.04, 0, P, 0, alto);
+      f0.box(mat.smalto, L - 0.04, L, 0, P, 0, alto);
+      for (const lato of [1, -1]) {
+        const f = telaio(t, a, lato);
+        f.box(mat.nero, 0.04, L - 0.04, 0.03, P / 2 - 0.025, 0, 0.1);
+        for (let i = 0; i < 5; i++) {
+          const y = 0.1 + i * 0.37;
+          f.box(mat.smalto, 0.04, L - 0.04, 0, P / 2 - 0.025, y - 0.02, y);
+          f.box(mat.carta, 0.04, L - 0.04, -0.012, 0, y - 0.055, y);
+          fila(f, mat, caso, pal, 0.06, L - 0.06, 0.03, P / 2 - 0.05, y, i === 4 ? alto - y - 0.02 : 0.33, bottiglie);
+        }
+      }
+      break;
+    }
+    case 'frigo':
+    case 'murale': {
+      const vetri = a.tipo === 'frigo';
+      const f = telaio(t, a, a.lato ?? 1);
+      const { L, P } = f;
+      f.box(mat.smalto, 0, L, P - 0.06, P, 0, alto);
+      f.box(mat.smalto, 0, 0.05, 0, P, 0, alto);
+      f.box(mat.smalto, L - 0.05, L, 0, P, 0, alto);
+      f.box(mat.smalto, 0, L, 0, P, alto - 0.16, alto);
+      f.box(mat.luceFrigo, 0.05, L - 0.05, 0.03, 0.07, alto - 0.19, alto - 0.16);
+      f.box(mat.smalto, 0, L, 0, P, 0, vetri ? 0.18 : 0.42);
+      if (!vetri) f.box(mat.smalto, 0.05, L - 0.05, 0, 0.04, 0.42, 0.52);
+      const pal = MERCI[vetri ? 'surgelati' : 'latte'];
+      const livelli = vetri ? [0.18, 0.55, 0.92, 1.29] : [0.42, 0.78, 1.12, 1.46];
+      livelli.forEach((y, i) => {
+        const d0 = vetri ? 0.1 : 0.08 + i * 0.06;
+        if (i > 0) f.box(mat.acciaio, 0.05, L - 0.05, d0 - 0.03, P - 0.06, y - 0.02, y);
+        fila(f, mat, caso, pal, 0.07, L - 0.07, d0, P - 0.1, y, (i === livelli.length - 1 ? alto - 0.2 - y : livelli[i + 1] - y) - 0.06);
+      });
+      if (vetri) {
+        const ante = Math.max(1, Math.round(L / 0.75));
+        for (let k = 0; k <= ante; k++) {
+          const s = (k * L) / ante;
+          f.box(mat.nero, Math.max(0, s - 0.025), Math.min(L, s + 0.025), 0, 0.05, 0.18, alto - 0.16);
+          if (k < ante) f.box(mat.acciaio, s + 0.06, s + 0.08, -0.04, 0, 0.7, 1.3);
+        }
+        f.box(mat.vetro, 0.05, L - 0.05, 0.015, 0.03, 0.18, alto - 0.16);
+      }
+      break;
+    }
+    case 'cassaBanco': {
+      const f = telaio(t, a, 1);
+      const { L, P } = f;
+      f.box(mat.smalto, 0, L, 0, P, 0.1, alto - 0.04);
+      f.box(mat.nero, 0.02, L - 0.02, 0.02, P - 0.02, 0, 0.1);
+      f.box(mat.acciaio, 0, 0.75, 0, P, alto - 0.04, alto);
+      f.box(mat.laminato, 0.75, 1.25, 0, P, alto - 0.04, alto);
+      f.box(mat.gomma, 1.25, L, 0.08, P - 0.08, alto - 0.03, alto + 0.008);
+      f.box(mat.smalto, 1.25, L, 0, 0.08, alto - 0.04, alto + 0.04);
+      f.box(mat.smalto, 1.25, L, P - 0.08, P, alto - 0.04, alto + 0.04);
+      f.box(mat.acciaio, 0.7, 0.75, 0, P, alto, alto + 0.06);
+      f.box(mat.nero, 0.85, 1.15, 0.18, 0.46, alto - 0.004, alto + 0.004);
+      f.box(mat.nero, 0.95, 1.07, P - 0.17, P - 0.05, alto, alto + 0.05);
+      f.box(mat.rosso, 1.7, 1.73, 0.1, P - 0.1, alto + 0.008, alto + 0.05);
+      f.box(mat.acciaio, L - 0.05, L - 0.02, P / 2 - 0.02, P / 2 + 0.02, alto, 2.3);
+      for (let k = 0; k < 3; k++) f.box(mat.prodotti, L - 0.45 - k * 0.12, L - 0.36 - k * 0.12, P + 0.02, P + 0.14, 0.2 + k * 0.25, 0.4 + k * 0.25, [0.8 - k * 0.2, 0.2 + k * 0.2, 0.25]);
+      break;
+    }
+    case 'carrelli': {
+      const f = telaio(t, a, 1);
+      const { L, P } = f;
+      const largo = Math.min(0.56, P - 0.04);
+      const d0 = (P - largo) / 2;
+      const d1 = d0 + largo;
+      for (let s = 0; s + 0.95 <= L + 0.001; s += 0.26) {
+        f.box(mat.acciaio, s + 0.05, s + 0.85, d0 + 0.04, d0 + 0.06, 0.1, 0.12);
+        f.box(mat.acciaio, s + 0.05, s + 0.85, d1 - 0.06, d1 - 0.04, 0.1, 0.12);
+        for (const [ss, dd] of [[s + 0.06, d0 + 0.03], [s + 0.78, d0 + 0.03], [s + 0.06, d1 - 0.09], [s + 0.78, d1 - 0.09]]) f.box(mat.nero, ss, ss + 0.06, dd, dd + 0.06, 0, 0.1);
+        f.box(mat.griglia, s + 0.1, s + 0.9, d0, d0 + 0.005, 0.42, 0.92);
+        f.box(mat.griglia, s + 0.1, s + 0.9, d1 - 0.005, d1, 0.42, 0.92);
+        f.box(mat.griglia, s + 0.1, s + 0.105, d0, d1, 0.42, 0.92);
+        f.box(mat.griglia, s + 0.1, s + 0.9, d0, d1, 0.42, 0.425);
+        f.box(mat.acciaio, s + 0.1, s + 0.9, d0, d0 + 0.012, 0.91, 0.93);
+        f.box(mat.acciaio, s + 0.1, s + 0.9, d1 - 0.012, d1, 0.91, 0.93);
+        f.box(mat.rosso, s + 0.9, s + 0.94, d0, d1, 0.98, 1.01);
+        f.box(mat.acciaio, s + 0.88, s + 0.9, d0, d0 + 0.02, 0.12, 1.0);
+        f.box(mat.acciaio, s + 0.88, s + 0.9, d1 - 0.02, d1, 0.12, 1.0);
+      }
+      break;
+    }
+    case 'cassette': {
+      const f = telaio(t, a, 1);
+      const { L, P } = f;
+      const piani = [[0, 0.5, 0], [0.5, 0.66, 0.22], [0.66, 0.82, 0.44]];
+      for (const [y0, y1, rientro] of piani) {
+        f.box(mat.legno, 0.02, L - 0.02, rientro, P - rientro, y0, y1);
+        const strisce = rientro >= 0.44 ? [[rientro, P - rientro]] : [[rientro, rientro + 0.22], [P - rientro - 0.22, P - rientro]];
+        for (const [d0, d1] of strisce) for (let s = 0.05; s + 0.36 <= L - 0.03; s += 0.4) {
+          const col = new THREE.Color(FRUTTA[Math.floor(caso() * FRUTTA.length)]);
+          const c = [col.r, col.g, col.b];
+          f.box(mat.legno, s, s + 0.36, d0 + 0.01, d1 - 0.01, y1, y1 + 0.03);
+          const righe = Math.max(1, Math.floor((d1 - d0 - 0.04) / 0.085));
+          for (let i = 0; i < 4; i++) for (let j = 0; j < righe; j++) {
+            const ss = s + 0.025 + i * 0.083;
+            const dd = d0 + 0.025 + j * 0.085;
+            f.box(mat.prodotti, ss, ss + 0.072, dd, dd + 0.072, y1 + 0.03, y1 + 0.09 + caso() * 0.025, c);
+          }
+        }
+      }
+      break;
+    }
+    case 'monitor': {
+      const f = telaio(t, a, -1);
+      const { L, P } = f;
+      f.box(mat.legno, 0, L, 0, P, alto - 0.04, alto);
+      for (const s of [0.04, L - 0.08]) f.box(mat.acciaio, s, s + 0.04, 0.05, P - 0.05, 0, alto - 0.04);
+      const w = (L - 0.3) / 3;
+      for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) {
+        const s = 0.15 + i * w;
+        f.box(mat.nero, s + 0.015, s + w - 0.015, P - 0.1, P - 0.06, alto + 0.1 + j * 0.42, alto + 0.5 + j * 0.42);
+        f.box(mat.schermo, s + 0.03, s + w - 0.03, P - 0.105, P - 0.1, alto + 0.115 + j * 0.42, alto + 0.485 + j * 0.42);
+      }
+      f.box(mat.nero, L / 2 - 0.25, L / 2 + 0.25, 0.12, 0.28, alto, alto + 0.02);
+      f.box(mat.nero, L / 2 + 0.35, L / 2 + 0.45, 0.14, 0.24, alto, alto + 0.02);
+      break;
+    }
     case 'bancone':
       t.scatola(mat.legno, u0 + 0.05, v0 + 0.05, u1 - 0.05, v1 - 0.05, 0, alto - 0.04, BIANCO, 1.2);
       t.scatola(mat.laminato, u0 - 0.04, v0 - 0.04, u1 + 0.04, v1 + 0.04, alto - 0.04, alto);
@@ -321,7 +626,8 @@ function arredo(t, mat, a, caso) {
         const lungo = lungoU ? u1 - u0 : v1 - v0;
         for (let s = 0.05; s < lungo - 0.12; s += 0.09 + caso() * 0.05) {
           const hh = Math.min(sopra, 0.12 + caso() * 0.22);
-          const col = new THREE.Color(a.merce === 'scatoloni' ? 0xa57c4f : COLORI_PRODOTTI[Math.floor(caso() * COLORI_PRODOTTI.length)]);
+          const pal = MERCI[a.merce] ?? COLORI_PRODOTTI;
+          const col = new THREE.Color(a.merce === 'scatoloni' ? 0xa57c4f : pal[Math.floor(caso() * pal.length)]);
           const c = [col.r, col.g, col.b];
           const w = 0.06 + caso() * 0.03;
           if (lungoU) t.scatola(mat.prodotti, u0 + s, v0 + 0.05, u0 + s + w, v1 - 0.05, y + 0.025, y + 0.025 + hh, c);
@@ -412,10 +718,46 @@ export function creaDinamicheLuogo(scena, luogo, set, mat) {
     gruppo.add(perno);
     porte.set(d.id, { perno, angolo: 0, base: perno.rotation.y });
   }
+  const quadri = [];
+  const registratori = [];
   for (const o of set.oggetti ?? []) {
     const g = new THREE.Group();
-    g.position.set(o.x, 0, o.z);
+    g.position.set(o.x, o.y ?? 0, o.z);
     g.rotation.y = o.yaw ?? 0;
+    if (o.tipo === 'quadro') {
+      const scatola = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.75, 0.14), new THREE.MeshStandardMaterial({ color: 0xc9ccc8, roughness: 0.5, metalness: 0.4 }));
+      scatola.position.y = 0.375;
+      g.add(scatola);
+      for (let i = 0; i < 8; i++) {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.07, 0.03), mat.nero);
+        b.position.set(-0.17 + i * 0.048, 0.5, -0.08);
+        g.add(b);
+      }
+      const led = new THREE.Mesh(new THREE.SphereGeometry(0.015, 8, 6), mat.led.clone());
+      led.position.set(0.2, 0.66, -0.075);
+      const targa = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.08), new THREE.MeshStandardMaterial({ map: texturaCartello('ANTIPANICO', 'offerta', 0.4, 0.08) }));
+      targa.position.set(0, 0.25, -0.072);
+      targa.rotation.y = Math.PI;
+      g.add(led, targa);
+      quadri.push({ led });
+      gruppo.add(g);
+      continue;
+    }
+    if (o.tipo === 'registratore') {
+      const scatola = new THREE.Mesh(new THREE.BoxGeometry(0.43, 0.07, 0.3), mat.nero);
+      scatola.position.y = 0.035;
+      g.add(scatola);
+      const leds = [];
+      for (let i = 0; i < 4; i++) {
+        const l = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, 0.004), new THREE.MeshBasicMaterial({ color: 0x3aa0ff }));
+        l.position.set(-0.15 + i * 0.03, 0.045, -0.152);
+        g.add(l);
+        leds.push(l);
+      }
+      registratori.push({ leds });
+      gruppo.add(g);
+      continue;
+    }
     const armadio = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.3, 0.38), new THREE.MeshStandardMaterial({ color: 0x8c9294, roughness: 0.6, metalness: 0.3 }));
     armadio.position.y = 0.65;
     armadio.castShadow = true;
@@ -453,9 +795,11 @@ export function creaDinamicheLuogo(scena, luogo, set, mat) {
     trapano.visible = false;
     const interno = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.78, 0.04), new THREE.MeshStandardMaterial({ color: 0x1a1a1a }));
     interno.position.set(0, 0.45, -0.2);
-    g.add(corpo, anta, trapano, interno);
+    const spia = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 6), mat.led.clone());
+    spia.position.set(0.24, 0.8, -0.325);
+    g.add(corpo, anta, trapano, interno, spia);
     gruppo.add(g);
-    return { anta, trapano, punta };
+    return { anta, trapano, punta, spia };
   });
   const biglietti = set.biglietti.map((b, i) => {
     const cf = set.casseforti.find(c => c.id === b.per);
@@ -485,7 +829,7 @@ export function creaDinamicheLuogo(scena, luogo, set, mat) {
   });
   const casse = set.casse.map(cs => {
     const g = new THREE.Group();
-    g.position.set(cs.x, 1.05, cs.z);
+    g.position.set(cs.x, cs.y ?? 1.05, cs.z);
     g.rotation.y = cs.yaw;
     const corpo = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.42), mat.nero);
     corpo.position.y = 0.06;
@@ -518,6 +862,9 @@ export function creaDinamicheLuogo(scena, luogo, set, mat) {
         const voluto = s.stato === 'aperta' ? -1.9 : 0;
         c.anta.rotation.y += (voluto - c.anta.rotation.y) * Math.min(1, dt * 2);
         c.trapano.visible = s.stato === 'trapano';
+        const attesa = s.stato === 'ritardo';
+        c.spia.material.color.setHex(s.stato === 'aperta' ? 0x20ff60 : attesa ? 0xffa000 : 0xff2020);
+        c.spia.visible = !attesa || Math.sin(tempo * 9) > -0.3;
         if (c.trapano.visible && !s.inceppato) c.punta.rotation.z += dt * 40;
       });
       telecamere.forEach((t, i) => {
@@ -531,6 +878,11 @@ export function creaDinamicheLuogo(scena, luogo, set, mat) {
       casse.forEach((c, i) => {
         const piena = vista.casse?.[i] ?? true;
         c.cassetto.position.z += ((piena ? 0 : -0.3) - c.cassetto.position.z) * Math.min(1, dt * 5);
+      });
+      for (const q of quadri) q.led.material.color.setHex(vista.antipanico === false ? 0x20ff60 : 0xff2020);
+      const registra = (vista.telecamere ?? []).some(tc => tc.stato === 'attiva');
+      for (const r of registratori) r.leds.forEach((l, i) => {
+        l.visible = registra && Math.sin(tempo * 3 + i * 1.7) > -0.6;
       });
       biglietti.forEach((b, i) => {
         b.visible = true;

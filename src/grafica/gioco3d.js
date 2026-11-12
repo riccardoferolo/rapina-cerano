@@ -189,7 +189,9 @@ export async function creaGioco3d(mondo, amb) {
     },
     aggiorna(vista, mioId, dt, ora) {
       tempo += dt;
-      folla.aggiorna(vista, mioId, dt, amb.citta.quota);
+      const luogo = colpoMostrato ? amb.luogoDi(colpoMostrato) : null;
+      mondo.alChiuso(!!luogo?.interni && luogo.dentro(mondo.camera.position.x, mondo.camera.position.z));
+      folla.aggiorna(vista, mioId, dt, amb.citta.quota, mondo.camera);
       parco.aggiorna(vista?.veicoli, dt, tempo);
       sacchi.aggiorna(vista?.sacchi);
       dinamiche?.aggiorna(vista, dt, tempo);

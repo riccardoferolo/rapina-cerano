@@ -6,7 +6,7 @@ const TIPI_PNG = ['guardia', 'poliziotto', 'titolare', 'civile', 'vigilante'];
 const TIPI_VEICOLO = ['utilitaria', 'berlina', 'furgone', 'volante', 'blindato'];
 const TIPI_SACCO = ['contanti', 'gioielli', 'oro', 'sigarette', 'documenti'];
 const STATI_TELECAMERA = ['attiva', 'loop', 'rotta'];
-const STATI_CASSAFORTE = ['chiusa', 'trapano', 'aperta'];
+const STATI_CASSAFORTE = ['chiusa', 'trapano', 'aperta', 'ritardo', 'persa'];
 
 export function faiIstantanea(s) {
   return {
@@ -30,7 +30,7 @@ export function faiIstantanea(s) {
     vt: s.vetrine.map(v => [v.rotta ? 1 : 0, v.vuota ? 1 : 0]),
     al: [s.allarme.attivo ? 1 : 0, r2(s.allarme.tempo ?? 0), s.polizia.prossima === null || s.polizia.prossima === undefined ? -1 : r2(s.polizia.prossima), s.polizia.ondata ?? 0, s.allarme.lineaTagliata ? 1 : 0],
     fu: [s.fuga?.attiva ? 1 : 0, s.fuga?.polizia ? 1 : 0, r2(s.fuga?.lontano ?? 0)],
-    mi: [s.tessera ? 1 : 0, s.fotografie ? 1 : 0, s.missione?.fatto ? 1 : 0, s.missione?.foto.length ?? 0, s.missione?.obiettivi.length ?? 0, s.scadenza ? r2(Math.max(0, s.scadenza - s.tempo)) : -1],
+    mi: [s.tessera ? 1 : 0, s.fotografie ? 1 : 0, s.missione?.fatto ? 1 : 0, s.missione?.foto.length ?? 0, s.missione?.obiettivi.length ?? 0, s.scadenza ? r2(Math.max(0, s.scadenza - s.tempo)) : -1, s.antipanico === false ? 0 : 1],
     es: s.esito ?? null,
   };
 }
@@ -60,6 +60,7 @@ export function espandi(i) {
     fotografie: !!i.mi[1],
     missione: { fatto: !!i.mi[2], foto: i.mi[3], totale: i.mi[4] },
     scadenza: i.mi[5] < 0 ? null : i.mi[5],
+    antipanico: i.mi[6] !== 0,
     esito: i.es,
   };
 }

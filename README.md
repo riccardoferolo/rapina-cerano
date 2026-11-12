@@ -30,10 +30,15 @@ Con `?locale` i segnali passano da `BroadcastChannel` (due schede dello stesso b
 
 ## Cosa c'è
 
-- **Cerano**: 3690 edifici con altezze stimate e colori dei tetti dalla foto aerea, 859 strade coi nomi veri,
-  marciapiedi rialzati tagliati agli incroci, strisce, rogge e navigli, 46 mila alberi, 800 lampioni, 717 auto
-  parcheggiate, campi colorati dall'ortofoto. Tramonto, notte e giorno.
-- **Campagna** di 5 colpi: Tabaccheria «Il Fumo del Borgo» (Via Roma), furgone portavalori «Blindati Ovesticino»
+- **Cerano**: 3690 edifici (2554 con l'altezza misurata dal LiDAR regionale, gli altri stimati) e colori dei
+  tetti dalla foto aerea, 859 strade coi nomi veri, marciapiedi rialzati tagliati agli incroci, rogge e navigli,
+  46 mila alberi, 800 lampioni, 717 auto parcheggiate, 95 piscine, e l'arredo vero di OpenStreetMap: 40 strisce
+  pedonali, 82 stop con la linea a terra, 18 fermate, semafori, fontanelle, la Fontana Beato Pacifico in Piazza
+  Crespi, i monumenti ai caduti. Tramonto, notte e giorno. Riusabile in altri giochi: [MAPPA.md](MAPPA.md).
+- **Campagna** di 6 colpi: Tabaccheria «Il Fumo del Borgo» (Via Roma), Supermercato «Il Paniere» (Piazza Crespi,
+  nell'edificio vero del supermercato: tre casse, guardia giurata, sette telecamere, antipanico da staccare in sala
+  sicurezza, cassa centrale dietro la tessera del direttore con la serratura a tempo, portavalori che ritira
+  l'incasso dopo sei minuti), furgone portavalori «Blindati Ovesticino»
   (Via Novara, di giorno, riparte dopo 4 minuti), Oreficeria «La Spiga d'Oro» (Via Mazzini), Credito Rurale
   Ceranese (Via Matteotti), Caveau del Municipio (Piazza Crespi, di notte). Ognuno si sblocca col precedente.
 - **Preparazioni**: fotografie di telecamere e guardia, tessera del direttore al bar, linea telefonica,
@@ -47,12 +52,13 @@ Con `?locale` i segnali passano da `BroadcastChannel` (due schede dello stesso b
 
 ## Prove
 
-- `npm test`: logica della città, colpi, preparazioni, campagna, rete (23 test).
-- `node _lavoro/collaudo-due.mjs`: due giocatori in rete con Edge, dal rifugio al colpo e ritorno (19 verifiche).
+- `npm test`: logica della città, colpi, supermercato, preparazioni, campagna, rete (34 test).
+- `node _lavoro/collaudo-due.mjs`: due giocatori in rete con Edge, dal rifugio al colpo e ritorno (20 verifiche).
 - `node _lavoro/foto-colpo.mjs alta tabaccheria` e `node _lavoro/foto-citta.mjs alta tramonto`: foto e fps a 1280×720.
 
 ## Crediti
 
 Dati cartografici © OpenStreetMap contributors (ODbL). Ortofoto 2010 © Regione Piemonte (CC BY 4.0), usata per
-il colore dei tetti, dei campi e per gli alberi. Modello del personaggio dagli esempi di three.js, armi
+il colore dei tetti, dei campi e per gli alberi. Altezze degli edifici © Regione Piemonte – BDTRE, ARPA Piemonte
+(CC BY 4.0). Come riusare la mappa: [MAPPA.md](MAPPA.md). Modello del personaggio dagli esempi di three.js, armi
 «Ultimate Gun Pack» di Quaternius (CC0), texture Poly Haven (CC0). Nomi di negozi, banca e ditte inventati.

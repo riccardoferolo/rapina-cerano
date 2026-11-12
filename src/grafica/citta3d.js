@@ -617,7 +617,7 @@ export function creaCostruttore() {
       for (const [materiale, b] of materiali) {
         if (!b.p.length) continue;
         const m = meshDaBuffer(materiale, b);
-        m.castShadow = ombre && !materiale.transparent;
+        m.castShadow = ombre && !materiale.transparent && !materiale.userData.senzaOmbra;
         contenitore.add(m);
       }
     },

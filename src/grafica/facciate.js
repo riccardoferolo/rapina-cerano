@@ -250,7 +250,11 @@ function scritta(ctx, testo, x, y, w, h, colore, sfondo) {
   ctx.font = `bold ${Math.floor(h * 0.62)}px Arial, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(testo, x + w / 2, y + h / 2 + 1, w * 0.9);
+  ctx.save();
+  ctx.translate(x + w / 2, 0);
+  ctx.scale(-1, 1);
+  ctx.fillText(testo, 0, y + h / 2 + 1, w * 0.9);
+  ctx.restore();
 }
 
 export function texturaTerra(negozi = false, seme = 3) {

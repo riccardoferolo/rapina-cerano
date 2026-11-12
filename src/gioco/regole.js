@@ -76,6 +76,8 @@ export const TEMPI = Object.freeze({
   colpoAlleSpalle: 0.8,
   leggiBiglietto: 1.2,
   fotografa: 1.5,
+  quadro: 9,
+  registratore: 6,
 });
 
 export const SACCHI = Object.freeze({
@@ -152,6 +154,7 @@ export const tempoAzione = (azione, ruolo, attrezzi = []) => {
   if (azione === 'portaElettronica') return ruolo === 'hacker' ? RUOLI.hacker.porteElettroniche : base;
   if (azione === 'trapano') return base * (ruolo === 'scassinatore' ? RUOLI.scassinatore.trapano : 1);
   if (azione === 'tagliaFili') return ruolo === 'hacker' ? 3 : base;
+  if (azione === 'quadro' || azione === 'registratore') return ruolo === 'hacker' ? base / 3 : base;
   if (azione === 'lega' && ruolo === 'azione') return 1;
   return base;
 };

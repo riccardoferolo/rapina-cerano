@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as clonaScheletro } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { modelloArma } from './armi3d.js';
+import { modelloArmaUnito } from './armi3d.js';
 
 const DISSOLVENZA = 0.25;
 const SEGUI = 14;
@@ -10,6 +10,7 @@ const TINTE = Object.freeze({
 });
 const CIVILI = [0xb56a4a, 0x5a7a9a, 0x8a8a5a, 0xc0b090, 0x6a4a6a, 0x9aa0a8];
 const ARMI_PNG = Object.freeze({ guardia: 'pistola', vigilante: 'revolver', poliziotto: 'carabina' });
+const RAGGIO_VISTA = 2.5;
 
 export async function caricaPersonaggio() {
   const gltf = await new GLTFLoader().loadAsync('./modelli/soldato.glb');
@@ -99,7 +100,7 @@ function creaPersona(scena, personaggio, materialiArmi, { tipo, nome, colore }) 
     supporto.clear();
     armaMostrata = arma;
     if (!arma) return;
-    const { gruppo } = modelloArma(arma, materialiArmi);
+    const { gruppo } = modelloArmaUnito(arma, materialiArmi);
     gruppo.rotation.y = Math.PI;
     supporto.add(gruppo);
   };
@@ -118,7 +119,7 @@ function creaPersona(scena, personaggio, materialiArmi, { tipo, nome, colore }) 
   const posMano = new THREE.Vector3();
   return {
     radice,
-    aggiorna(e, dt, quota = 0) {
+    aggiorna(e, dt, quota = 0, inVista = true) {
       const salto = !visto.pronto || Math.hypot(e.x - visto.x, e.z - visto.z) > 3;
       const k = salto ? 1 : 1 - Math.exp(-dt * SEGUI);
       const px = visto.x;
@@ -131,6 +132,10 @@ function creaPersona(scena, personaggio, materialiArmi, { tipo, nome, colore }) 
       visto.velocita += (v - visto.velocita) * Math.min(1, dt * 8);
       radice.position.set(visto.x, quota, visto.z);
       radice.rotation.y = visto.yaw;
+      const disegna = inVista && !e.inAuto && e.stato !== 'fuggito';
+      radice.visible = disegna;
+      radice.matrixWorldAutoUpdate = disegna;
+      if (!disegna) return;
       const giu = e.stato === 'morto' || e.stato === 'stordito' || e.stato === 'terra' || e.stato === 'arrestato';
       const inGinocchio = e.stato === 'a terra' || e.stato === 'legato';
       suona(giu || inGinocchio ? 'fermo' : visto.velocita > 3.2 ? 'corre' : visto.velocita > 0.4 ? 'cammina' : 'fermo');
@@ -149,7 +154,6 @@ function creaPersona(scena, personaggio, materialiArmi, { tipo, nome, colore }) 
         supporto.position.copy(posMano);
         supporto.rotation.x = -(e.pitch ?? 0);
       }
-      radice.visible = !e.inAuto && e.stato !== 'fuggito';
     },
     chiudi() {
       scena.remove(radice);
@@ -162,6 +166,9 @@ function creaPersona(scena, personaggio, materialiArmi, { tipo, nome, colore }) 
 
 export function creaFolla(scena, personaggio, materialiArmi) {
   const persone = new Map();
+  const cono = new THREE.Frustum();
+  const proiezione = new THREE.Matrix4();
+  const sfera = new THREE.Sphere(new THREE.Vector3(), RAGGIO_VISTA);
   const deposito = new Map();
   const chiaveDeposito = (tipo, colore) => `${tipo}|${colore ?? ''}`;
   const prendi = (tipo, opzioni) => {
@@ -174,6 +181,7 @@ export function creaFolla(scena, personaggio, materialiArmi) {
   };
   const posa = (p, conNome) => {
     p.radice.visible = false;
+    p.radice.matrixWorldAutoUpdate = false;
     if (conNome) {
       p.chiudi();
       return;
@@ -192,20 +200,32 @@ export function creaFolla(scena, personaggio, materialiArmi) {
         }
       }
     },
-    aggiorna(vista, mioId, dt, quota) {
+    aggiorna(vista, mioId, dt, quota, camera = null) {
       const presenti = new Set();
+      let inVista = () => true;
+      if (camera) {
+        camera.updateMatrixWorld();
+        proiezione.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        cono.setFromProjectionMatrix(proiezione);
+        inVista = (x, y, z) => {
+          sfera.center.set(x, y + 0.9, z);
+          return cono.intersectsSphere(sfera);
+        };
+      }
       for (const g of vista?.giocatori ?? []) {
         if (g.id === mioId) continue;
         const k = `g:${g.id}`;
         presenti.add(k);
         if (!persone.has(k)) persone.set(k, prendi('giocatore', { nome: g.nome }));
-        persone.get(k).aggiorna({ ...g, arma: g.maschera ? g.arma : null }, dt, quota(g.x, g.z));
+        const qg = quota(g.x, g.z);
+        persone.get(k).aggiorna({ ...g, arma: g.maschera ? g.arma : null }, dt, qg, inVista(g.x, qg, g.z));
       }
       for (const p of vista?.png ?? []) {
         const k = `p:${p.id}`;
         presenti.add(k);
         if (!persone.has(k)) persone.set(k, prendi(p.tipo, { colore: p.tipo === 'civile' ? CIVILI[p.id % CIVILI.length] : null }));
-        persone.get(k).aggiorna({ ...p, arma: ['combatte', 'radio', 'sospetto', 'giro'].includes(p.stato) ? ARMI_PNG[p.tipo] ?? null : null }, dt, quota(p.x, p.z));
+        const qp = quota(p.x, p.z);
+        persone.get(k).aggiorna({ ...p, arma: ['combatte', 'radio', 'sospetto', 'giro'].includes(p.stato) ? ARMI_PNG[p.tipo] ?? null : null }, dt, qp, inVista(p.x, qp, p.z));
       }
       for (const [k, p] of persone) {
         if (presenti.has(k)) continue;
