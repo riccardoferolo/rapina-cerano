@@ -1,0 +1,9 @@
+export const SUPABASE_URL = 'https://dxqmblsmawdtqhtekfnf.supabase.co';
+export const SUPABASE_CHIAVE_PUBBLICA = 'sb_publishable_mjj5GumFWTwYleVvkV4pcw_tibE8HUI';
+export const SERVER_ICE = Object.freeze([{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]);
+export const ATTESA_RISERVA_MS = 6000;
+export const BATTITO_MS = 25000;
+export const RICONNESSIONE_MIN_MS = 1000;
+export const RICONNESSIONE_MAX_MS = 15000;
+export const CIAO_OGNI_MS = 1000;
+export const PREFISSO_CANALE = 'rapinacerano';

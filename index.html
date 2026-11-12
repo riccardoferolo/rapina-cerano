@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rapina a Cerano</title>
+</head>
+<body>
+  <div id="mondo"></div>
+
+  <section id="schermata-inizio" class="schermata" hidden>
+    <div class="scheda larga">
+      <h1>Rapina a Cerano</h1>
+      <p class="sotto">Una banda, un paese della Bassa, cinque colpi. Da 2 a 4 amici, online.</p>
+      <form id="modulo-inizio" autocomplete="off">
+        <label>Il tuo nome <input id="nome" maxlength="16" placeholder="Es. Richi"></label>
+        <div class="titoletto">Il tuo ruolo nella banda</div>
+        <div id="ruoli" class="ruoli"></div>
+        <div class="riga">
+          <label class="stretto">Grafica
+            <select id="grafica">
+              <option value="auto">Automatica</option>
+              <option value="alta">Alta</option>
+              <option value="media">Media</option>
+              <option value="bassa">Bassa (PC lenti)</option>
+            </select>
+          </label>
+          <label class="stretto">Codice stanza <input id="codice" maxlength="4" placeholder="ABCD"></label>
+        </div>
+        <div class="riga pulsanti">
+          <button type="button" id="crea" class="primario" disabled>Carico Cerano…</button>
+          <button type="button" id="entra" disabled>Entra con il codice</button>
+        </div>
+        <p id="errore-inizio" class="errore"></p>
+      </form>
+      <p class="crediti">Mappa © OpenStreetMap contributors (ODbL) · ortofoto 2010 © Regione Piemonte (CC BY 4.0) · modelli e texture CC0</p>
+    </div>
+  </section>
+
+  <section id="schermata-stanza" class="schermata" hidden>
+    <div class="scheda">
+      <h2>Stanza <span id="t-codice"></span></h2>
+      <div id="blocco-link" class="riga"><input id="link" readonly><button type="button" id="copia">Copia il link</button></div>
+      <p id="t-stato" class="stato"></p>
+      <ul id="t-giocatori" class="giocatori"></ul>
+      <button type="button" id="parti" class="primario">Andate al rifugio</button>
+      <p id="nota-stanza" class="nota"></p>
+    </div>
+  </section>
+
+  <section id="pannello" class="schermata pannello" hidden>
+    <div class="scheda larga">
+      <div class="testata"><h2 id="pannello-titolo"></h2><button type="button" id="pannello-chiudi">Chiudi (Esc)</button></div>
+      <div id="pannello-corpo"></div>
+    </div>
+  </section>
+
+  <div id="hud" hidden>
+    <div id="mirino"></div>
+    <div id="danno"></div>
+    <div id="messaggi"></div>
+    <div id="alto-sx"><div id="obiettivo"></div><div id="allarme" hidden></div></div>
+    <div id="alto-dx"><div id="soldi"></div><div id="rete"></div></div>
+    <div id="basso-sx">
+      <div id="maschera"></div>
+      <div id="ruolo"></div>
+      <div class="barra"><div id="vita-barra"></div></div>
+      <div id="giubbotto" class="barra giubbotto" hidden><div id="giubbotto-barra"></div></div>
+      <div id="sacco"></div>
+    </div>
+    <div id="azione" hidden><div id="azione-testo"></div><div class="barra piccola"><div id="azione-barra"></div></div></div>
+    <div id="aterra" hidden></div>
+    <div id="auto-info" hidden></div>
+    <div id="basso-dx">
+      <canvas id="minimappa" width="220" height="220"></canvas>
+      <div id="arma" hidden><div id="arma-nome"></div><div id="arma-colpi"></div></div>
+    </div>
+    <div id="clicca" hidden>Clicca per giocare</div>
+  </div>
+  <div id="carico">Carico Cerano…</div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
