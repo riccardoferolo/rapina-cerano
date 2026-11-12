@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rapina a Cerano</title>
+  <script type="module" crossorigin src="./assets/index-BtZ360xa.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-B0dkJ0Da.css">
+</head>
+<body>
+  <div id="mondo"></div>
+
+  <section id="schermata-inizio" class="schermata titolo" hidden>
+    <div class="t-fondo"><img id="t-copertina" src="./copertina/copertina.jpg" alt=""></div>
+    <div class="t-sirena t-rossa"></div>
+    <div class="t-sirena t-blu"></div>
+    <canvas id="t-soldi"></canvas>
+    <div class="t-righe"></div>
+    <div class="t-vignetta"></div>
+    <header class="t-testata">
+      <div class="t-logo t-rosa" data-testo="RAPINA">RAPINA</div>
+      <div class="t-logo t-ciano" data-testo="A CERANO">A CERANO</div>
+      <div class="t-motto">Il paese è aperto. Le casseforti pure.</div>
+    </header>
+    <form id="modulo-inizio" class="t-modulo" autocomplete="off">
+      <label class="t-nome"><span>Come ti chiamano?</span><input id="nome" maxlength="16" placeholder="Es. Richi"></label>
+      <div class="t-titoletto">Scegli il mestiere · foto segnaletica</div>
+      <div id="ruoli" class="t-ruoli"></div>
+      <button type="button" id="entra-citta" class="t-entra" disabled><span>CARICO CERANO…</span></button>
+      <div class="t-sotto">
+        <span class="t-online"><i></i> Niente stanze, niente attese: entri e sei in città con chi c'è.</span>
+        <label>Grafica
+          <select id="grafica">
+            <option value="auto">Automatica</option>
+            <option value="alta">Alta</option>
+            <option value="media">Media</option>
+            <option value="bassa">Bassa (PC lenti)</option>
+          </select>
+        </label>
+      </div>
+      <p id="errore-inizio" class="errore"></p>
+    </form>
+    <div class="t-notizie"><span class="t-ultimora">ULTIM'ORA</span><div class="t-scorre"><span>Sirene in Piazza Crespi: assalto al supermercato «Il Paniere», il direttore: «Avevano il passamontagna e una calma da professionisti» ✦ Via Roma, sparita la cassaforte della tabaccheria ✦ Furgone portavalori senza le chiavi in Via Novara ✦ Il sindaco: «Cerano è un paese tranquillo» ✦ Visti tre individui correre verso la cascina di Via Ranzina con dei sacchi ✦ La Fontana Beato Pacifico piena di banconote ✦</span></div></div>
+    <p class="t-crediti">Mappa © OpenStreetMap contributors (ODbL) · ortofoto e altezze © Regione Piemonte, BDTRE, ARPA (CC BY 4.0) · persone MakeHuman/MPFB (CC0) · Blender · nomi di negozi e banche inventati</p>
+  </section>
+
+  <div id="chiamata" class="chiamata" hidden>
+    <div class="ch-anello"></div>
+    <div class="ch-testo"><b id="chiamata-chi"></b><span id="chiamata-cosa"></span></div>
+    <div class="ch-tasti"><button type="button" id="chiamata-si">Rispondi (Y)</button><button type="button" id="chiamata-no">Rifiuta (N)</button></div>
+  </div>
+
+  <section id="pannello" class="schermata pannello" hidden>
+    <div class="scheda larga">
+      <div class="testata"><h2 id="pannello-titolo"></h2><button type="button" id="pannello-chiudi">Chiudi (Esc)</button></div>
+      <div id="pannello-corpo"></div>
+    </div>
+  </section>
+
+  <div id="hud" hidden>
+    <div id="mirino"></div>
+    <div id="danno"></div>
+    <div id="messaggi"></div>
+    <div id="alto-sx"><div id="obiettivo"></div><div id="allarme" hidden></div></div>
+    <div id="alto-dx"><div id="soldi"></div><div id="rete"></div></div>
+    <div id="basso-sx">
+      <div id="maschera"></div>
+      <div id="ruolo"></div>
+      <div class="barra"><div id="vita-barra"></div></div>
+      <div id="giubbotto" class="barra giubbotto" hidden><div id="giubbotto-barra"></div></div>
+      <div id="sacco"></div>
+    </div>
+    <div id="azione" hidden><div id="azione-testo"></div><div class="barra piccola"><div id="azione-barra"></div></div></div>
+    <div id="aterra" hidden></div>
+    <div id="auto-info" hidden></div>
+    <div id="basso-dx">
+      <canvas id="minimappa" width="220" height="220"></canvas>
+      <div id="arma" hidden><div id="arma-nome"></div><div id="arma-colpi"></div></div>
+    </div>
+    <div id="clicca" hidden>Clicca per giocare</div>
+  </div>
+  <div id="carico">Carico Cerano…</div>
+</body>
+</html>
