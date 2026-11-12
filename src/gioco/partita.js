@@ -55,6 +55,7 @@ export function creaRifugio({ seme, giocatori = [], campagna = null, ambiente })
     const nuovo = aggiungiGiocatore(stato, g);
     nuovo.x = rx + (i % 2) * 1.5 - 0.75;
     nuovo.z = rz + Math.floor(i / 2) * 1.5;
+    nuovo.yaw = ambiente.rifugioYaw + Math.PI;
   });
   return stato;
 }
