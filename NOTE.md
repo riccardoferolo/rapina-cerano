@@ -20,4 +20,4 @@
 ## Da fare
 - Comportamento dei PNG da rifinire sul campo (giri dentro i negozi, coperture della polizia).
 - Personaggi: c'è solo il soldato tinto (asset CC0 degli esempi three.js).
-- Nessun commit, repository o pubblicazione: aspettano il via dell'utente.
+- Pubblicato: https://github.com/riccardoferolo/rapina-cerano (main = sorgenti) e https://riccardoferolo.github.io/rapina-cerano/ (ramo gh-pages = `dist`, ricostruito con `npm run build` e spinto a mano). Prova online: `node _lavoro/prova-online.mjs`.
