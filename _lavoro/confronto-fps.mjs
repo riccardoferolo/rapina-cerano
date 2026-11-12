@@ -9,9 +9,9 @@ try {
     await p.goto('http://localhost:5431/?locale');
     await p.waitForFunction(() => window.__gioco?.pronto(), null, { timeout: 120000 });
     await p.fill('#nome', 'Prova');
-    await p.click('#crea');
-    await p.click('#parti');
-    await p.waitForFunction(() => window.__gioco.stato().vista?.fase === 'rifugio', null, { timeout: 30000 });
+    await p.click('#entra-citta');
+    await p.waitForFunction(() => window.__gioco.stato().vista?.giocatori?.length >= 1, null, { timeout: 30000 });
+    await p.waitForTimeout(900);
     await p.evaluate(c => window.__gioco.parti(c), colpo);
     await p.waitForFunction(c => window.__gioco.stato().vista?.colpo === c, colpo, { timeout: 30000 });
     await p.evaluate(([c, u, v, verso]) => {

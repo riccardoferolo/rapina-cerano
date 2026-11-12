@@ -1,20 +1,23 @@
 import './stile.css';
+import './titolo.css';
 import * as THREE from 'three';
 import { caricaDati } from './citta/citta.js';
 import { creaAmbiente, RIFUGIO } from './gioco/ambiente.js';
 import { COLPI, colpoPerId, definizione, PREPARAZIONI, conInterni } from './gioco/colpi/indice.js';
 import { R, RUOLI, ARMI, SACCHI, ATTREZZI, POTENZIAMENTI, VEICOLI, ELENCO_RUOLI, velocitaConSacco } from './gioco/regole.js';
-import { creaPartita, creaRifugio, passo, aggiungiGiocatore, rimuoviGiocatore, interazioni, sincronizzaPorte } from './gioco/partita.js';
-import { allestisci } from './gioco/allestimento.js';
+import { creaPartita, creaMondoAperto, allestisciColpo, chiudiColpo, passo, aggiungiGiocatore, rimuoviGiocatore, interazioni, sincronizzaPorte } from './gioco/partita.js';
+import { allestisci, postoAuto } from './gioco/allestimento.js';
 import { faiIstantanea, espandi, interpola } from './gioco/istantanea.js';
-import { guida, puntiVeicolo, velocita } from './gioco/veicoli.js';
+import { guida, puntiVeicolo, velocita, creaVeicolo } from './gioco/veicoli.js';
 import { creaArsenale, armaAttiva, aggiorna as aggiornaArsenale, spara, ricarica, cambia, allinea } from './gioco/arsenale.js';
 import { semeCasuale } from './gioco/caso.js';
 import * as camp from './gioco/campagna.js';
 import { bloccaColpi } from './gioco/luoghi.js';
+import { baricentro } from './citta/geometria.js';
 import { apriSegnali } from './rete/segnali.js';
-import { collega, collegaHost } from './rete/collegamento.js';
-import { codiceStanza, normalizzaCodice, pulisciNome, azioneValida } from './rete/protocollo.js';
+import { entraNelMondo, GIOCATORI_PER_MONDO } from './rete/mondoPubblico.js';
+import { pulisciNome, azioneValida } from './rete/protocollo.js';
+import { avviaCopertina } from './copertina.js';
 import { creaMondo } from './grafica/scena.js';
 import { creaGioco3d } from './grafica/gioco3d.js';
 import { LIVELLI, leggiScelta, salvaScelta, livelloAttivo } from './grafica/qualita.js';
@@ -45,11 +48,13 @@ const RAGGIO_BERSAGLIO = 0.38;
 const ALTEZZA_TESTA = 1.52;
 const ANGOLO_INTERAZIONE = 0.9;
 const DISTANZA_RIFUGIO_TAVOLO = 2.6;
+const CHIUSURA_COLPO_S = 9;
+const COLORI_AUTO = [0x8a1f1f, 0x2d3a4a, 0x3a5a3a, 0xc8c2b4, 0x1c1c1e, 0x6b4a2a, 0x9aa3ad, 0x2a4a7a];
 const ALTEZZA_SEDILE = 1.15;
 const CAMERA_AUTO = Object.freeze({ dietro: 6.8, su: 2.6, mira: 1.3 });
 
 const $ = id => document.getElementById(id);
-const schermate = ['schermata-inizio', 'schermata-stanza'].map($);
+const schermate = ['schermata-inizio'].map($);
 const mostraSchermata = id => schermate.forEach(sch => { sch.hidden = sch.id !== id; });
 
 const hud = creaHud();
@@ -65,7 +70,12 @@ const s = {
   coll: null,
   nomeHost: null,
   ospiti: new Map(),
-  lobby: [],
+  rete: null,
+  statoRete: null,
+  presentato: false,
+  chiamata: null,
+  chiusuraColpo: null,
+  schedaTelefono: 'banda',
   pingOspiti: new Map(),
   fase: 'inizio',
   partita: null,
@@ -84,7 +94,6 @@ const s = {
   ultimoPing: 0,
   ultimoCiao: 0,
   ultimoTickHost: 0,
-  lobbyRicevuta: false,
   ping: null,
   statoSegnali: null,
   campagna: null,
@@ -124,178 +133,161 @@ function inviaAzione(azione) {
 }
 
 function testoRete() {
-  if (!s.coll) return '';
-  if (s.sonoHost && s.ospiti.size === 0) return 'da solo';
-  if (s.coll.modo === 'diretto') return `diretto${s.ping !== null ? ` · ${s.ping} ms` : ''}`;
-  if (s.coll.modo === 'riserva') return `via server${s.ping !== null ? ` · ${s.ping} ms` : ''}`;
-  return 'collegamento…';
+  if (!s.rete) return '';
+  const citta = `Cerano ${s.rete.mondo} · ${s.vista?.giocatori.length ?? 1} in città`;
+  if (s.sonoHost) return s.ospiti.size ? `${citta} · ospiti tu` : citta;
+  if (s.coll?.modo === 'diretto') return `${citta}${s.ping !== null ? ` · ${s.ping} ms` : ''}`;
+  if (s.coll?.modo === 'riserva') return `${citta} · via server`;
+  return `${citta} · collegamento…`;
 }
 
-function giocatoriLobby() {
-  if (!s.sonoHost) return s.lobby;
-  return [{ nome: s.nome, ruolo: s.ruolo, pronto: true }, ...[...s.ospiti.values()].map(o => ({ nome: o.nome, ruolo: o.ruolo, pronto: true }))];
-}
-
-function aggiornaStanza() {
-  $('t-codice').textContent = s.stanza;
-  $('blocco-link').hidden = !s.sonoHost;
-  $('parti').hidden = !s.sonoHost;
-  const stato = $('t-stato');
-  const amici = giocatoriLobby().filter(g => g.nome !== s.nome);
-  if (s.coll?.modo === 'occupata') {
-    stato.textContent = 'La stanza è piena: la banda è già di quattro.';
-    stato.dataset.tipo = 'errore';
-  } else if (s.statoSegnali === 'offline' && !collegato()) {
-    stato.textContent = 'Il server dei collegamenti non risponde, riprovo…';
-    stato.dataset.tipo = 'errore';
-  } else if (collegato() && amici.length) {
-    stato.textContent = `Collegati ${s.coll.modo === 'diretto' ? '(diretto)' : '(via server)'}`;
-    stato.dataset.tipo = 'ok';
-  } else {
-    stato.textContent = s.sonoHost ? 'Manda il link ai tuoi amici (fino a 3). Puoi anche partire da solo.' : 'Mi collego alla stanza…';
-    stato.dataset.tipo = 'attesa';
-  }
-  $('t-giocatori').innerHTML = giocatoriLobby().map(g => `<li><span>${pulisciNome(g.nome) ?? '?'}</span><span>${RUOLI[g.ruolo]?.nome ?? ''}</span></li>`).join('');
-  $('parti').textContent = amici.length ? 'Andate al rifugio' : 'Vai al rifugio da solo';
-  $('nota-stanza').textContent = s.sonoHost ? 'Chi arriva dopo entra direttamente in partita.' : s.nomeHost ? `Aspetta che ${s.nomeHost} parta per il rifugio.` : '';
-}
-
-function inviaLobby() {
-  if (!s.sonoHost || !collegato()) return;
-  const giocatori = giocatoriLobby();
-  for (const id of s.ospiti.keys()) s.coll.inviaA(id, { t: 'lobby', nomeHost: s.nome, giocatori, campagna: s.riassunto ?? undefined });
-  if (s.fase === 'gioco') s.coll.invia({ t: 'inizia', seme: s.semeCorrente, colpo: s.colpoCorrente });
-}
-
-function entraInStanza(sonoHost, stanza) {
+function entraInCitta() {
   audio.prepara();
-  s.sonoHost = sonoHost;
-  s.stanza = stanza;
-  s.fase = 'stanza';
-  if (sonoHost) {
-    s.campagna = camp.caricaCampagna();
-    camp.scheda(s.campagna, s.nome);
-    s.riassunto = camp.riassunto(s.campagna);
-  }
-  const segnali = apriSegnali(stanza, { locale: LOCALE });
-  segnali.suStato(stato => {
-    s.statoSegnali = stato;
-    aggiornaStanza();
-  });
-  s.coll = sonoHost ? collegaHost({ segnali, mioId: s.mioId, soloRiserva: SOLO_RISERVA }) : collega({ segnali, sonoHost, mioId: s.mioId, soloRiserva: SOLO_RISERVA });
-  s.coll.suStato(() => {
-    aggiornaStanza();
-    if (collegato()) inviaLobby();
-  });
-  s.coll.suMessaggio(suMessaggio);
-  const extra = [LOCALE ? 'locale' : null, SOLO_RISERVA ? 'riserva' : null].filter(Boolean).map(p => `&${p}`).join('');
-  $('link').value = `${location.origin}${location.pathname}?stanza=${stanza}${extra}`;
-  mostraSchermata('schermata-stanza');
-  aggiornaStanza();
-  if (sonoHost) $('parti').focus();
-}
-
-function datiGiocatore(id, nome, ruolo) {
-  const sch = s.campagna ? camp.scheda(s.campagna, nome) : { attrezzi: [], potenziamenti: [] };
-  return { id, nome, ruolo, attrezzi: [...sch.attrezzi], potenziamenti: [...sch.potenziamenti] };
-}
-
-function iniziaPartita(seme, colpo) {
-  s.semeCorrente = seme;
-  s.colpoCorrente = colpo;
-  s.buffer = [];
-  s.scarto = null;
-  s.vista = null;
-  s.vistaPrima = null;
-  s.accumulo = 0;
-  s.azioniLocali = [];
-  s.azioniRemote = [];
-  s.esitoMostrato = null;
-  chiudiPannello();
-  const def = colpo ? definizione(colpo) : null;
-  s.set = def ? allestisci(def, seme, amb.luogoDi(colpo), amb.citta) : null;
-  gioco.preparaColpo(colpo, s.set);
-  mondo.impostaOra(def?.ora ?? 'tramonto');
-  Object.assign(io, { pronto: false, tp: 0, auto: null, chino: false, pitch: 0, visuale: 'terza' });
-  arsenale.armi = [{ tipo: RUOLI[s.ruolo].arma, caricatore: ARMI[RUOLI[s.ruolo].arma].caricatore, riserva: ARMI[RUOLI[s.ruolo].arma].riserva }];
-  arsenale.attiva = 0;
-  if (s.sonoHost) {
-    const giocatori = [datiGiocatore(s.mioId, s.nome, s.ruolo)];
-    for (const [id, o] of s.ospiti) giocatori.push(datiGiocatore(id, o.nome, o.ruolo));
-    const preparazioni = colpo && s.campagna ? camp.preparazioniFatte(s.campagna, colpo) : [];
-    const campagna = { attrezzi: {}, preparazioni, veicolo: colpo && s.campagna ? camp.veicoloColpo(s.campagna, colpo) : 'utilitaria' };
-    s.partita = colpo ? creaPartita({ seme, colpo, giocatori, campagna, ambiente: amb }) : creaRifugio({ seme, giocatori, campagna, ambiente: amb });
-    sincronizzaPorte(s.partita, amb);
-  }
+  s.campagna = camp.caricaCampagna();
+  camp.scheda(s.campagna, s.nome);
+  s.riassunto = camp.riassunto(s.campagna);
   s.fase = 'gioco';
-  if (s.sonoHost) inviaLobby();
-  mostraSchermata(null);
+  $('schermata-inizio').classList.add('t-uscita');
+  setTimeout(() => {
+    mostraSchermata(null);
+    copertina?.ferma();
+  }, 650);
   hud.mostra(true);
   comandi.attiva(true);
   document.activeElement?.blur();
-  hud.messaggio(colpo ? `${def.nome} — ${def.via}` : `${RIFUGIO.nome}: la mappa è sul tavolo (F)`, 'info');
+  s.rete = entraNelMondo({
+    mioId: s.mioId, locale: LOCALE, soloRiserva: SOLO_RISERVA,
+    giocatoriNoti: () => s.vista?.giocatori.map(g => g.id) ?? [s.mioId],
+    suStato: st => { s.statoRete = st; },
+    suRuolo,
+  });
+  hud.messaggio('Sei a Cerano. P per il telefono: chiama la banda e scegli il colpo.', 'info');
 }
 
-function scegliColpo(colpo) {
-  if (s.sonoHost) partiComeHost(colpo === 'rifugio' ? null : colpo);
-  else inviaAzione({ tipo: 'scegli', colpo });
+function suRuolo(ruolo, coll) {
+  s.coll = coll;
+  s.sonoHost = ruolo === 'host';
+  s.ospiti = new Map();
+  s.pingOspiti = new Map();
+  s.buffer = [];
+  s.scarto = null;
+  s.presentato = false;
+  coll.suMessaggio(suMessaggio);
+  if (s.sonoHost) creaMondoHost();
+  else s.partita = null;
 }
 
-function partiComeHost(colpo = null) {
-  if (!s.sonoHost) return;
-  const seme = semeCasuale();
-  iniziaPartita(seme, colpo);
-  if (collegato()) s.coll.invia({ t: 'inizia', seme, colpo });
+function puntoDiPartenza() {
+  const piazze = amb.citta.dati.aree.filter(a => a.t === 'piazza');
+  const piazza = piazze.sort((a, b) => Math.hypot(...baricentro(a.p)) - Math.hypot(...baricentro(b.p)))[0];
+  for (let i = 0; piazza && i < 200; i++) {
+    const [x0, z0, x1, z1] = [Math.min(...piazza.p.map(q => q[0])), Math.min(...piazza.p.map(q => q[1])), Math.max(...piazza.p.map(q => q[0])), Math.max(...piazza.p.map(q => q[1]))];
+    const x = x0 + Math.random() * (x1 - x0);
+    const z = z0 + Math.random() * (z1 - z0);
+    if (!dentroAnello(x, z, piazza.p) || amb.citta.collisioni.respingi(x, z, 0.8).urto) continue;
+    return { x, z, yaw: Math.random() * Math.PI * 2 };
+  }
+  return { x: -18, z: 10, yaw: 0 };
+}
+
+function dentroAnello(x, z, anello) {
+  let d = false;
+  for (let i = 0, j = anello.length - 1; i < anello.length; j = i++) {
+    const [xi, zi] = anello[i];
+    const [xj, zj] = anello[j];
+    if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) d = !d;
+  }
+  return d;
+}
+
+function daiAuto(stato, g) {
+  if (stato.veicoli.some(v => v.di === g.id)) return;
+  try {
+    const posto = postoAuto(amb.citta, { ingresso: [g.x, g.z] }, { nome: 'auto' }, Math.random, { tipo: 'utilitaria', distanzaMin: 6, distanzaMax: 70 }, stato.veicoli);
+    stato.veicoli.push(creaVeicolo(stato.prossimoId++, 'utilitaria', posto.x, posto.z, posto.yaw, { libera: true, di: g.id, colore: COLORI_AUTO[stato.prossimoId % COLORI_AUTO.length] }));
+  } catch {
+    return;
+  }
+}
+
+function creaMondoHost() {
+  const prima = s.vista;
+  s.partita = creaMondoAperto({ seme: semeCasuale() });
+  s.semeCorrente = null;
+  s.colpoCorrente = null;
+  s.set = null;
+  gioco.preparaColpo(null, null);
+  const posizione = io.pronto ? { x: io.x, z: io.z, yaw: io.yaw } : puntoDiPartenza();
+  const io_ = aggiungiGiocatore(s.partita, { ...datiGiocatore(s.mioId, s.nome, s.ruolo), posizione });
+  io_.teletrasporto = io.tp + 1;
+  if (!io.auto) daiAuto(s.partita, io_);
+  if (prima) hud.messaggio('Chi ospitava se n\'è andato: ora la città gira sul tuo computer', 'avviso');
+  sincronizzaPorte(s.partita, amb);
+}
+
+function presentati() {
+  s.coll?.invia({ t: 'ciao', nome: s.nome, id: s.mioId, ruolo: s.ruolo, ...(io.pronto ? { x: io.x, z: io.z, yaw: io.yaw } : {}), attrezzi: mieiAttrezzi().attrezzi, potenziamenti: mieiAttrezzi().potenziamenti });
+}
+
+function mieiAttrezzi() {
+  const sch = s.campagna ? camp.scheda(s.campagna, s.nome) : { attrezzi: [], potenziamenti: [] };
+  return { attrezzi: [...sch.attrezzi], potenziamenti: [...sch.potenziamenti] };
+}
+
+function datiGiocatore(id, nome, ruolo, extra = null) {
+  const propri = id === s.mioId ? mieiAttrezzi() : { attrezzi: extra?.attrezzi ?? [], potenziamenti: extra?.potenziamenti ?? [] };
+  return { id, nome, ruolo, attrezzi: propri.attrezzi.filter(a => Object.hasOwn(ATTREZZI, a)), potenziamenti: propri.potenziamenti.filter(x => typeof x === 'string').slice(0, 8) };
+}
+
+function aggiornaColpoLocale(seme, colpo) {
+  if (seme === s.semeCorrente && colpo === s.colpoCorrente) return;
+  s.semeCorrente = seme;
+  s.colpoCorrente = colpo;
+  const def = colpo ? definizione(colpo) : null;
+  s.set = def ? allestisci(def, seme, amb.luogoDi(colpo), amb.citta) : null;
+  gioco.preparaColpo(colpo, s.set);
+  s.esitoMostrato = null;
+  if (def) hud.messaggio(`Colpo in corso: ${def.nome} — ${def.via}`, 'avviso');
 }
 
 function suMessaggio(m, da) {
   switch (m.t) {
     case 'ciao': {
-      if (!s.sonoHost || !da || m.id !== da) return;
+      if (!s.sonoHost || !da || m.id !== da || !s.partita) return;
       const nome = pulisciNome(m.nome) ?? 'Amico';
       const ruolo = ELENCO_RUOLI.includes(m.ruolo) ? m.ruolo : 'azione';
+      const nuovo = !s.ospiti.has(da);
       const ospite = s.ospiti.get(da) ?? { nome, ruolo, remoto: null };
-      Object.assign(ospite, { nome, ruolo });
+      Object.assign(ospite, { nome, ruolo, attrezzi: Array.isArray(m.attrezzi) ? m.attrezzi : [], potenziamenti: Array.isArray(m.potenziamenti) ? m.potenziamenti : [] });
       s.ospiti.set(da, ospite);
-      if (s.campagna) camp.scheda(s.campagna, nome);
-      s.riassunto = s.campagna ? camp.riassunto(s.campagna) : null;
-      if (s.fase === 'gioco' && s.partita) aggiungiGiocatore(s.partita, datiGiocatore(da, nome, ruolo));
-      inviaLobby();
-      aggiornaStanza();
+      if (!s.partita.giocatori.some(g => g.id === da)) {
+        const posizione = Number.isFinite(m.x) && Number.isFinite(m.z) ? { x: m.x, z: m.z, yaw: m.yaw ?? 0 } : puntoDiPartenza();
+        const g = aggiungiGiocatore(s.partita, { ...datiGiocatore(da, nome, ruolo, ospite), posizione });
+        daiAuto(s.partita, g);
+        if (nuovo) notificaTutti(`${nome} è arrivato a Cerano`, 'info');
+      }
+      s.rete?.aggiornaQuanti(s.partita.giocatori.length);
       return;
     }
-    case 'lobby':
-      if (s.sonoHost) return;
-      s.lobbyRicevuta = true;
-      s.nomeHost = pulisciNome(m.nomeHost);
-      s.lobby = m.giocatori;
-      s.riassunto = m.campagna ?? s.riassunto;
-      if (s.pannello) aggiornaPannello();
-      aggiornaStanza();
-      return;
-    case 'inizia':
-      if (s.sonoHost || (m.seme === s.semeCorrente && m.colpo === s.colpoCorrente)) return;
-      iniziaPartita(m.seme, m.colpo);
-      return;
     case 'g': {
       const ospite = s.sonoHost ? s.ospiti.get(da) : null;
       if (!ospite) return;
-      riprendiOspite(da);
       ospite.remoto = { x: m.x, z: m.z, yaw: m.yaw, pitch: m.pitch, chino: m.chino, corsa: m.corsa, tp: m.tp, veicolo: m.veicolo };
       return;
     }
     case 'az':
       if (!s.sonoHost || !s.ospiti.has(da)) return;
-      riprendiOspite(da);
       if (s.azioniRemote.length >= AZIONI_REMOTE_MASSIME) s.azioniRemote.shift();
       s.azioniRemote.push({ ...m.a, da });
       return;
     case 'st': {
-      if (s.sonoHost || s.fase === 'inizio') return;
-      if (m.g !== s.semeCorrente || m.ist.c !== s.colpoCorrente) {
-        iniziaPartita(m.g, m.ist.c);
+      if (s.sonoHost || s.fase !== 'gioco') return;
+      if (!m.ist.g.some(g => g.id === s.mioId)) {
+        presentati();
         return;
       }
+      s.presentato = true;
+      aggiornaColpoLocale(m.g || null, m.ist.c);
       const ultima = s.buffer[s.buffer.length - 1];
       if (ultima && m.ist.t <= ultima.tempo) return;
       const arrivo = performance.now();
@@ -321,35 +313,124 @@ function suMessaggio(m, da) {
   }
 }
 
-function riprendiOspite(id) {
-  const o = s.ospiti.get(id);
-  if (s.fase !== 'gioco' || !s.partita || !o || s.partita.giocatori.some(g => g.id === id)) return;
-  aggiungiGiocatore(s.partita, datiGiocatore(id, o.nome, o.ruolo));
+function nomeDi(id) {
+  return s.partita?.giocatori.find(g => g.id === id)?.nome ?? 'Qualcuno';
 }
+
+function notificaTutti(testo, tipo) {
+  const e = [{ k: 'messaggio', testo, tipo }];
+  suEventi(e);
+  if (collegato()) s.coll.invia({ t: 'ev', eventi: e });
+}
+
+function avvisaBanda(testo, tipo, escluso = null) {
+  for (const id of s.partita.banda.membri) if (id !== escluso) notifica(id, testo, tipo);
+}
+
+function gestisciBanda(a) {
+  const st = s.partita;
+  const b = st.banda;
+  const chi = a.da;
+  if (a.tipo === 'chiama') {
+    if (!st.giocatori.some(g => g.id === a.a) || a.a === chi) return;
+    if (b.membri.includes(a.a)) {
+      notifica(chi, `${nomeDi(a.a)} è già nella banda`, 'info');
+      return;
+    }
+    if (!b.capo || !b.membri.includes(chi)) {
+      if (b.capo && st.colpo) {
+        notifica(chi, 'C\'è già un colpo in corso in città: aspetta che finisca', 'avviso');
+        return;
+      }
+      if (!b.capo) Object.assign(b, { capo: chi, membri: [chi], colpo: null, inviti: {} });
+    }
+    b.inviti[a.a] = { da: chi, scade: st.tempo + 40 };
+    const e = [{ k: 'chiamata', a: a.a, da: chi, nome: nomeDi(chi), colpo: b.colpo }];
+    if (a.a === s.mioId) suEventi(e);
+    else s.coll?.inviaA(a.a, { t: 'ev', eventi: e });
+    notifica(chi, `Squilla il telefono di ${nomeDi(a.a)}…`, 'info');
+    return;
+  }
+  if (a.tipo === 'rispondi') {
+    const invito = b.inviti[chi];
+    delete b.inviti[chi];
+    if (!invito || invito.scade < st.tempo) return;
+    if (!a.si) {
+      notifica(invito.da, `${nomeDi(chi)} non risponde. Peccato.`, 'avviso');
+      return;
+    }
+    if (!b.capo) Object.assign(b, { capo: invito.da, membri: [invito.da] });
+    if (!b.membri.includes(chi)) b.membri.push(chi);
+    avvisaBanda(`${nomeDi(chi)} è dentro. La banda è di ${b.membri.length}.`, 'bene');
+    return;
+  }
+  if (a.tipo === 'pianifica') {
+    if (b.capo && b.capo !== chi) {
+      notifica(chi, `Il colpo lo sceglie ${nomeDi(b.capo)}, il capo`, 'avviso');
+      return;
+    }
+    if (!b.capo) Object.assign(b, { capo: chi, membri: [chi], inviti: {} });
+    b.colpo = a.colpo;
+    avvisaBanda(`Il piano: ${definizione(a.colpo)?.nome ?? a.colpo}. Il capo dà il via dal telefono.`, 'info');
+    return;
+  }
+  if (a.tipo === 'avvia') {
+    if (b.capo !== chi || !b.colpo) return;
+    if (st.colpo) {
+      notifica(chi, 'C\'è già un colpo in corso in città', 'avviso');
+      return;
+    }
+    const preparazioni = (a.preparazioni ?? []).filter(x => typeof x === 'string').slice(0, 6);
+    const campagna = { attrezzi: {}, preparazioni, veicolo: a.veicolo === 'furgone' ? 'furgone' : 'utilitaria' };
+    const seme = semeCasuale();
+    allestisciColpo(st, { seme, colpo: b.colpo, campagna, ambiente: amb });
+    sincronizzaPorte(st, amb);
+    aggiornaColpoLocale(seme, b.colpo);
+    s.chiusuraColpo = null;
+    avvisaBanda(`Si parte: ${definizione(b.colpo).nome}, ${definizione(b.colpo).via}. Il punto è sulla mappa.`, 'allarme');
+    return;
+  }
+  if (a.tipo === 'lascia') {
+    b.membri = b.membri.filter(id => id !== chi);
+    if (b.capo === chi) b.capo = b.membri[0] ?? null;
+    if (!b.membri.length) Object.assign(b, { capo: null, colpo: null, inviti: {} });
+    notifica(chi, 'Hai lasciato la banda', 'info');
+    avvisaBanda(`${nomeDi(chi)} ha lasciato la banda`, 'avviso');
+    return;
+  }
+  if (a.tipo === 'attrezzi') {
+    const g = st.giocatori.find(x => x.id === chi);
+    if (!g) return;
+    g.attrezzi = (a.attrezzi ?? []).filter(x => Object.hasOwn(ATTREZZI, x));
+    g.potenziamenti = (a.potenziamenti ?? []).filter(x => typeof x === 'string').slice(0, 8);
+  }
+}
+
+function avviaColpoDiProva(colpo) {
+  if (!s.sonoHost || !s.partita) return;
+  if (!colpo) {
+    if (s.partita.colpo) chiudiColpoHost();
+    return;
+  }
+  if (s.partita.colpo) chiudiColpoHost();
+  const b = s.partita.banda;
+  Object.assign(b, { capo: s.mioId, membri: s.partita.giocatori.map(g => g.id), colpo, inviti: {} });
+  gestisciBanda({ tipo: 'avvia', da: s.mioId, preparazioni: [], veicolo: 'utilitaria' });
+}
+
+function chiudiColpoHost() {
+  chiudiColpo(s.partita);
+  aggiornaColpoLocale(null, null);
+  s.chiusuraColpo = null;
+}
+
+const AZIONI_BANDA = new Set(['chiama', 'rispondi', 'pianifica', 'avvia', 'lascia', 'attrezzi']);
 
 function eseguiAzioniHost(azioni) {
   const resto = [];
   for (const a of azioni) {
-    if (a.tipo === 'compra' || a.tipo === 'potenzia') {
-      const nome = a.da === s.mioId ? s.nome : s.ospiti.get(a.da)?.nome;
-      if (!nome || !s.campagna) continue;
-      const ruolo = a.da === s.mioId ? s.ruolo : s.ospiti.get(a.da)?.ruolo;
-      const esito = a.tipo === 'compra' ? camp.compra(s.campagna, nome, a.voce) : camp.potenzia(s.campagna, nome, ruolo, a.voce);
-      camp.salvaCampagna(s.campagna);
-      s.riassunto = camp.riassunto(s.campagna);
-      inviaLobby();
-      notifica(a.da, esito.ok ? `Comprato: ${ATTREZZI[a.voce]?.nome ?? a.voce}` : esito.motivo, esito.ok ? 'bene' : 'avviso');
-      if (s.pannello) aggiornaPannello();
-      continue;
-    }
-    if (a.tipo === 'scegli') {
-      const scelto = a.colpo === 'rifugio' ? null : a.colpo;
-      const def = scelto ? definizione(scelto) : null;
-      const base = def?.preparazione ? def.per : scelto;
-      if (!scelto || !s.campagna || camp.sbloccato(s.campagna, base)) s.daAvviare = { colpo: scelto };
-      continue;
-    }
-    resto.push(a);
+    if (AZIONI_BANDA.has(a.tipo)) gestisciBanda(a);
+    else resto.push(a);
   }
   return resto;
 }
@@ -400,6 +481,7 @@ function suEventi(eventi) {
       case 'fine':
         break;
       default:
+        suEventiMondo(e);
     }
   }
 }
@@ -410,18 +492,23 @@ function panDi(x, z) {
 }
 
 function pulisciOspiti() {
-  let cambiato = false;
   for (const id of [...s.ospiti.keys()]) {
     if (s.coll.silenzio(id) <= SILENZIO_RIMOZIONE_MS) continue;
-    if (s.partita) rimuoviGiocatore(s.partita, id);
+    const nome = s.ospiti.get(id)?.nome;
+    if (s.partita) {
+      rimuoviGiocatore(s.partita, id);
+      s.partita.veicoli = s.partita.veicoli.filter(v => v.di !== id || v.posti.some(Boolean));
+      const b = s.partita.banda;
+      b.membri = b.membri.filter(x => x !== id);
+      if (b.capo === id) b.capo = b.membri[0] ?? null;
+      if (!b.membri.length) Object.assign(b, { capo: null, colpo: null, inviti: {} });
+    }
     s.ospiti.delete(id);
     s.pingOspiti.delete(id);
     s.coll.rimuovi(id);
-    cambiato = true;
+    if (nome) notificaTutti(`${nome} ha lasciato Cerano`, 'info');
+    s.rete?.aggiornaQuanti(s.partita?.giocatori.length ?? 1);
   }
-  if (!cambiato) return;
-  aggiornaStanza();
-  inviaLobby();
 }
 
 function mieiIngressi() {
@@ -445,29 +532,25 @@ function tickHost(dt, ora) {
       s.accumulo -= R.PASSO;
     }
     s.ultimoTickHost = ora;
-    if (s.daAvviare) {
-      const { colpo } = s.daAvviare;
-      s.daAvviare = null;
-      partiComeHost(colpo);
-      return;
+    const fine = eventi.find(e => e.k === 'fine');
+    if (fine && p.colpo) {
+      const membri = p.banda.membri.length ? p.banda.membri : p.giocatori.map(g => g.id);
+      const quota = fine.vinto ? Math.floor(fine.totale / Math.max(1, membri.length)) : 0;
+      p.esito.quote = membri.map(id => ({ nome: nomeDi(id), quota }));
+      for (const id of membri) {
+        const e = [{ k: 'bottino', a: id, colpo: p.colpo, vinto: fine.vinto, totale: fine.totale, quota }];
+        if (id === s.mioId) suEventi(e);
+        else s.coll?.inviaA(id, { t: 'ev', eventi: e });
+      }
+      s.chiusuraColpo = p.tempo + CHIUSURA_COLPO_S;
     }
+    if (s.chiusuraColpo !== null && s.chiusuraColpo !== undefined && p.tempo >= s.chiusuraColpo) chiudiColpoHost();
     if (eventi.length && collegato()) s.coll.invia({ t: 'ev', eventi });
     if (eventi.length) suEventi(eventi);
-    const fine = eventi.find(e => e.k === 'fine');
-    if (fine && s.campagna && p.colpo) {
-      const nomi = p.giocatori.map(g => g.nome);
-      const missione = definizione(p.colpo);
-      if (missione?.preparazione && fine.vinto) camp.registraPreparazione(s.campagna, missione.per, missione.preparazione);
-      const quote = missione?.preparazione ? [] : camp.registraEsito(s.campagna, p.colpo, fine, nomi);
-      camp.salvaCampagna(s.campagna);
-      s.riassunto = camp.riassunto(s.campagna);
-      p.esito.quote = quote;
-      inviaLobby();
-    }
   }
   const ogni = ISTANTANEE_OGNI_MS[modoRete()];
   if (p && collegato() && ora - s.ultimaIstantanea >= ogni) {
-    s.coll.invia({ t: 'st', g: s.semeCorrente, ist: faiIstantanea(p) }, { veloce: true });
+    s.coll.invia({ t: 'st', g: p.semeColpo ?? 0, ist: faiIstantanea(p) }, { veloce: true });
     s.ultimaIstantanea = Math.max(s.ultimaIstantanea + ogni, ora - ogni);
   }
 }
@@ -489,8 +572,8 @@ function tick() {
       s.coll.invia({ t: 'ping', n: ora });
       s.ultimoPing = ora;
     }
-    if (!s.sonoHost && !s.lobbyRicevuta && ora - s.ultimoCiao > CIAO_OGNI_MS) {
-      s.coll.invia({ t: 'ciao', nome: s.nome, id: s.mioId, ruolo: s.ruolo });
+    if (!s.sonoHost && !s.presentato && ora - s.ultimoCiao > CIAO_OGNI_MS) {
+      presentati();
       s.ultimoCiao = ora;
     }
   }
@@ -513,6 +596,40 @@ function vistaOspite(ora) {
   const [a, b] = s.buffer;
   if (b && tempo > a.tempo) return interpola(a, b, (tempo - a.tempo) / Math.max(1e-6, b.tempo - a.tempo));
   return a;
+}
+
+function suEventiMondo(e) {
+  if (e.k === 'chiamata' && e.a === s.mioId) {
+    s.chiamata = { da: e.da, nome: e.nome, colpo: e.colpo, fino: performance.now() + 30000 };
+    audio.squillo?.();
+    mostraChiamata();
+  } else if (e.k === 'bottino' && e.a === s.mioId) {
+    const def = definizione(e.colpo);
+    if (def?.preparazione && e.vinto) camp.registraPreparazione(s.campagna, def.per, def.preparazione);
+    else if (!def?.preparazione) camp.registraEsito(s.campagna, e.colpo, { vinto: e.vinto, totale: e.quota }, [s.nome]);
+    camp.salvaCampagna(s.campagna);
+    s.riassunto = camp.riassunto(s.campagna);
+    if (e.vinto) hud.messaggio(`La tua parte: ${euro(e.quota)}`, 'bene');
+  }
+}
+
+function mostraChiamata() {
+  const c = s.chiamata;
+  const box = $('chiamata');
+  if (!c) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  $('chiamata-chi').textContent = c.nome;
+  $('chiamata-cosa').textContent = c.colpo ? `Ha un piano: ${definizione(c.colpo)?.nome ?? ''}` : 'Ti vuole nella banda';
+}
+
+function rispondi(si) {
+  if (!s.chiamata) return;
+  inviaAzione({ tipo: 'rispondi', si });
+  s.chiamata = null;
+  mostraChiamata();
 }
 
 function sincronizzaPorteLocali(vista) {
@@ -545,13 +662,11 @@ function pseudoStato(vista) {
 
 function scegliInterazione(vista, me) {
   if (!vista || !me || me.stato !== 'vivo') return null;
-  if (vista.fase === 'rifugio') {
-    if (me.inAuto) return { chiave: 'esci', testo: 'Scendi dall\'auto', tempo: 0, x: me.x, z: me.z };
+  if (!me.inAuto) {
     const [mx, mz] = gioco.rifugio.mappa;
-    if (Math.hypot(mx - io.x, mz - io.z) < DISTANZA_RIFUGIO_TAVOLO) return { chiave: 'ui:mappa', testo: 'Guarda la mappa di Cerano e scegli il colpo', tempo: 0, x: mx, z: mz };
+    if (Math.hypot(mx - io.x, mz - io.z) < DISTANZA_RIFUGIO_TAVOLO) return { chiave: 'ui:colpi', testo: 'La mappa dei colpi', tempo: 0, x: mx, z: mz };
     const [bx, bz] = gioco.rifugio.banco;
     if (Math.hypot(bx - io.x, bz - io.z) < DISTANZA_RIFUGIO_TAVOLO) return { chiave: 'ui:banco', testo: 'Banco degli attrezzi', tempo: 0, x: bx, z: bz };
-    return null;
   }
   const elenco = interazioni(pseudoStato(vista), amb, { ...me, attrezzi: [], potenziamenti: [] });
   let migliore = null;
@@ -696,7 +811,10 @@ function colpoMischia(vista, me) {
 let fTenuto = null;
 function usaArmiEAzioni(lettura, me, vista, dt, interazione) {
   for (const a of lettura.azioni) {
-    if (a === 'maschera' && !me.maschera && vista.fase === 'colpo') inviaAzione({ tipo: 'maschera' });
+    if (a === 'telefono') apriPannello('telefono');
+    else if (a === 'rispondi' && s.chiamata) rispondi(true);
+    else if (a === 'rifiuta' && s.chiamata) rispondi(false);
+    else if (a === 'maschera' && !me.maschera && vista.fase === 'colpo') inviaAzione({ tipo: 'maschera' });
     else if (a === 'grida' && vista.fase === 'colpo') inviaAzione({ tipo: 'grida' });
     else if (a === 'lancia' && me.sacchi?.length) inviaAzione({ tipo: 'lancia', pitch: io.pitch });
     else if (a === 'chino' && !me.inAuto) io.chino = !io.chino;
@@ -710,8 +828,10 @@ function usaArmiEAzioni(lettura, me, vista, dt, interazione) {
     }
   }
   if (lettura.fPremuto && interazione) {
-    if (interazione.chiave.startsWith('ui:')) apriPannello(interazione.chiave.slice(3));
-    else if (interazione.chiave === 'esci' && vista.fase === 'rifugio') inviaAzione({ tipo: 'usa', chiave: 'esci', attivo: true });
+    if (interazione.chiave === 'ui:colpi') {
+      s.schedaTelefono = 'colpi';
+      apriPannello('telefono');
+    } else if (interazione.chiave.startsWith('ui:')) apriPannello(interazione.chiave.slice(3));
     else {
       inviaAzione({ tipo: 'usa', chiave: interazione.chiave, attivo: true });
       fTenuto = interazione.chiave;
@@ -744,7 +864,15 @@ function usaArmiEAzioni(lettura, me, vista, dt, interazione) {
 
 function obiettivo(vista, me) {
   if (!vista || !me) return '';
-  if (vista.fase === 'rifugio') return 'Rifugio — cascina di Via Ranzina. Al tavolo la mappa dei colpi, a destra il banco degli attrezzi.';
+  const banda = vista.banda ?? { capo: null, membri: [], colpo: null };
+  const mio = banda.membri.includes(s.mioId);
+  if (vista.fase !== 'colpo' || (!mio && banda.membri.length)) {
+    if (vista.fase === 'colpo') return `Rapina in corso: ${definizione(vista.colpo)?.nome ?? ''}. Non è la tua banda.`;
+    if (!mio) return 'Cerano è tua. P: telefono — chiama qualcuno o scegli un colpo e parti da solo. Le auto con la chiave sono tue.';
+    const capo = banda.capo === s.mioId ? 'Tu sei il capo' : `Il capo è ${vista.giocatori.find(g => g.id === banda.capo)?.nome ?? '?'}`;
+    if (!banda.colpo) return `Banda di ${banda.membri.length}. ${capo}: il colpo si sceglie dal telefono (P).`;
+    return `Piano: ${definizione(banda.colpo)?.nome ?? ''}. ${capo}: si parte dal telefono (P).`;
+  }
   if (vista.esito) return '';
   if (me.stato === 'terra') return 'Sei a terra: aspetta che un compagno ti rialzi.';
   const def = definizione(vista.colpo);
@@ -798,10 +926,52 @@ function chiudiPannello() {
 
 const euro = n => `${Math.round(n).toLocaleString('it-IT')} €`;
 
+function schedaBanda(vista) {
+  const banda = vista?.banda ?? { capo: null, membri: [], colpo: null };
+  const mio = banda.membri.includes(s.mioId);
+  const persone = vista?.giocatori ?? [];
+  const membri = persone.filter(g => banda.membri.includes(g.id));
+  const altri = persone.filter(g => g.id !== s.mioId && !banda.membri.includes(g.id));
+  return `<div class="tel-blocco"><h3>La tua banda</h3>${mio ? `<ul class="tel-lista">${membri.map(g => `<li><b>${pulisciNome(g.nome)}</b><span>${RUOLI[g.ruolo]?.nome ?? ''}${g.id === banda.capo ? ' · capo' : ''}</span></li>`).join('')}</ul><button data-lascia>Lascia la banda</button>` : '<p class="tel-nota">Sei da solo. Chiama qualcuno qui sotto, oppure scegli un colpo: chi ti risponde entra nella banda.</p>'}</div>
+    <div class="tel-blocco"><h3>In città adesso</h3>${altri.length ? `<ul class="tel-lista">${altri.map(g => `<li><b>${pulisciNome(g.nome)}</b><span>${RUOLI[g.ruolo]?.nome ?? ''}</span><button data-chiama="${g.id}">📞 Chiama</button></li>`).join('')}</ul>` : persone.length > 1 ? '<p class="tel-nota">Tutti quelli in città sono già nella tua banda.</p>' : '<p class="tel-nota">Per ora sei l\'unico in città. Chi apre il sito entra qui con te.</p>'}</div>`;
+}
+
+function schedaColpi(vista) {
+  const ria = s.riassunto;
+  const banda = vista?.banda ?? { capo: null, membri: [], colpo: null };
+  const comando = !banda.capo || banda.capo === s.mioId;
+  return `<div class="colpi">${COLPI.map(def => {
+    const c = ria?.colpi?.[def.id];
+    const aperto = c?.sbloccato ?? def.ordine === 1;
+    const scelto = banda.colpo === def.id;
+    const preps = (def.preparazioni ?? []).map(id => {
+      const fatta = c?.preparazioni?.includes(id);
+      return `<span class="prep ${fatta ? 'fatta' : ''}">${fatta ? '✓ ' : ''}${PREPARAZIONI[id].nome}${aperto && !fatta && comando ? ` <button data-pianifica="prep:${id}">Scegli</button>` : ''}</span>`;
+    }).join('');
+    const azione = !aperto ? '' : scelto && comando ? `<button class="primario" data-avvia="${def.id}">SI PARTE</button>` : comando ? `<button class="primario" data-pianifica="${def.id}">Scegli</button>` : scelto ? '<span class="tel-nota">Il piano del capo</span>' : '';
+    return `<div class="colpo ${aperto ? '' : 'chiuso'} ${scelto ? 'scelto' : ''}"><div><h3>${def.ordine}. ${def.nome}</h3><p>${def.via} — ${def.breve}</p><p>${c?.fatti ? `Fatto ${c.fatti} volte, migliore ${euro(c.migliore)}` : aperto ? 'Mai tentato' : 'Si sblocca col colpo precedente'}</p>${preps ? `<div class="preps">${preps}</div>` : ''}</div><div>${azione}</div></div>`;
+  }).join('')}</div>${banda.colpo?.startsWith('prep:') && comando ? `<p><button class="primario" data-avvia="${banda.colpo}">SI PARTE: ${definizione(banda.colpo)?.nome ?? ''}</button></p>` : ''}`;
+}
+
+function avviaDalTelefono(colpo) {
+  const base = definizione(colpo)?.preparazione ? definizione(colpo).per : colpo;
+  inviaAzione({ tipo: 'avvia', preparazioni: s.campagna ? camp.preparazioniFatte(s.campagna, base) : [], veicolo: s.campagna ? camp.veicoloColpo(s.campagna, base) : 'utilitaria' });
+  chiudiPannello();
+}
+
 function aggiornaPannello() {
   const corpo = $('pannello-corpo');
   const ria = s.riassunto;
-  if (s.pannello === 'mappa') {
+  if (s.pannello === 'telefono') {
+    $('pannello-titolo').textContent = `📱 ${s.nome} · ${euro(ria?.giocatori?.[s.nome]?.soldi ?? 0)}`;
+    const schede = { banda: 'Banda', colpi: 'Colpi' };
+    corpo.innerHTML = `<div class="tel-schede">${Object.entries(schede).map(([k, n]) => `<button data-scheda="${k}" class="${s.schedaTelefono === k ? 'attiva' : ''}">${n}</button>`).join('')}</div>${s.schedaTelefono === 'colpi' ? schedaColpi(s.vista) : schedaBanda(s.vista)}<p class="tasti">P chiude · gli attrezzi si comprano al banco della cascina di Via Ranzina</p>`;
+    corpo.querySelectorAll('[data-scheda]').forEach(b => b.addEventListener('click', () => { s.schedaTelefono = b.dataset.scheda; aggiornaPannello(); }));
+    corpo.querySelectorAll('[data-chiama]').forEach(b => b.addEventListener('click', () => inviaAzione({ tipo: 'chiama', a: b.dataset.chiama })));
+    corpo.querySelectorAll('[data-lascia]').forEach(b => b.addEventListener('click', () => inviaAzione({ tipo: 'lascia' })));
+    corpo.querySelectorAll('[data-pianifica]').forEach(b => b.addEventListener('click', () => { inviaAzione({ tipo: 'pianifica', colpo: b.dataset.pianifica }); setTimeout(aggiornaPannello, 300); }));
+    corpo.querySelectorAll('[data-avvia]').forEach(b => b.addEventListener('click', () => avviaDalTelefono(b.dataset.avvia)));
+  } else if (s.pannello === 'mappa') {
     $('pannello-titolo').textContent = 'La mappa di Cerano';
     corpo.innerHTML = `<div class="colpi">${COLPI.map(def => {
       const c = ria?.colpi?.[def.id];
@@ -813,7 +983,6 @@ function aggiornaPannello() {
       return `<div class="colpo ${aperto ? '' : 'chiuso'}"><div><h3>${def.ordine}. ${def.nome}</h3><p>${def.via} — ${def.breve}</p><p>${c?.fatti ? `Fatto ${c.fatti} volte, migliore ${euro(c.migliore)}` : aperto ? 'Mai tentato' : 'Si sblocca col colpo precedente'}</p>${preps ? `<div class="preps">${preps}</div>` : ''}</div>
         <div>${aperto ? `<button class="primario" data-colpo="${def.id}">Si parte</button>` : ''}</div></div>`;
     }).join('')}</div><p class="tasti">Le preparazioni sono facoltative ma decisive. Chiunque della banda può scegliere: si parte tutti insieme.</p>`;
-    corpo.querySelectorAll('[data-colpo]').forEach(b => b.addEventListener('click', () => scegliColpo(b.dataset.colpo)));
   } else if (s.pannello === 'banco') {
     $('pannello-titolo').textContent = 'Banco degli attrezzi';
     const mia = ria?.giocatori?.[s.nome] ?? { soldi: 0, attrezzi: [], potenziamenti: [] };
@@ -821,16 +990,23 @@ function aggiornaPannello() {
       <div class="negozio">${Object.entries(ATTREZZI).map(([k, a]) => `<div class="voce"><b>${a.nome}</b><span>${a.descrizione}</span><span class="costo">${euro(a.costo)}</span>${mia.attrezzi.includes(k) ? '<span>Ce l\'hai</span>' : `<button data-compra="${k}" ${mia.soldi < a.costo ? 'disabled' : ''}>Compra</button>`}</div>`).join('')}</div>
       <h3>Potenziamenti da ${RUOLI[s.ruolo].nome}</h3>
       <div class="negozio">${POTENZIAMENTI[s.ruolo].map(p => `<div class="voce"><b>${p.nome}</b><span>${p.effetto}</span><span class="costo">${euro(p.costo)}</span>${mia.potenziamenti.includes(p.nome) ? '<span>Ce l\'hai</span>' : `<button data-potenzia="${p.nome}" ${mia.soldi < p.costo ? 'disabled' : ''}>Compra</button>`}</div>`).join('')}</div>`;
-    corpo.querySelectorAll('[data-compra]').forEach(b => b.addEventListener('click', () => inviaAzione({ tipo: 'compra', voce: b.dataset.compra })));
-    corpo.querySelectorAll('[data-potenzia]').forEach(b => b.addEventListener('click', () => inviaAzione({ tipo: 'potenzia', voce: b.dataset.potenzia })));
+    const dopoAcquisto = esito => {
+      hud.messaggio(esito.ok ? 'Comprato' : esito.motivo, esito.ok ? 'bene' : 'avviso');
+      camp.salvaCampagna(s.campagna);
+      s.riassunto = camp.riassunto(s.campagna);
+      inviaAzione({ tipo: 'attrezzi', ...mieiAttrezzi() });
+      aggiornaPannello();
+    };
+    corpo.querySelectorAll('[data-compra]').forEach(b => b.addEventListener('click', () => dopoAcquisto(camp.compra(s.campagna, s.nome, b.dataset.compra))));
+    corpo.querySelectorAll('[data-potenzia]').forEach(b => b.addEventListener('click', () => dopoAcquisto(camp.potenzia(s.campagna, s.nome, s.ruolo, b.dataset.potenzia))));
   } else if (s.pannello === 'esito') {
     const e = s.esitoMostrato;
     $('pannello-titolo').textContent = e?.preparazione ? (e.vinto ? 'Preparazione riuscita' : 'Preparazione fallita') : e?.vinto ? 'Colpo riuscito' : 'Colpo fallito';
     corpo.innerHTML = `<div class="esito"><h3>${e?.preparazione ? (e.vinto ? PREPARAZIONI[e.preparazione]?.nome ?? '' : 'Da rifare') : e?.vinto ? euro(e.totale) : 'Niente bottino'}</h3>
       <p>${e?.vinto ? `${e.sacchi} sacchi, ${e.pulito ? 'senza allarme (+20%)' : 'con l\'allarme'} in ${Math.floor(e.durata / 60)} min ${e.durata % 60} s` : 'La polizia vi ha presi.'}</p>
       <table>${(e?.giocatori ?? []).map(g => `<tr><td>${g.nome}</td><td>${RUOLI[g.ruolo]?.nome ?? ''}</td><td>${g.stato === 'arrestato' ? 'arrestato' : 'libero'}</td><td>${e.quote?.find(q => q.nome === g.nome) ? euro(e.quote.find(q => q.nome === g.nome).quota) : ''}</td></tr>`).join('')}</table>
-      <button class="primario" id="torna">Torna al rifugio</button></div>`;
-    $('torna')?.addEventListener('click', () => scegliColpo('rifugio'));
+      <button class="primario" id="torna">Torna in città</button></div>`;
+    $('torna')?.addEventListener('click', () => chiudiPannello());
   }
 }
 
@@ -906,7 +1082,7 @@ function ciclo(ora) {
           }
         }
       }
-      if (vista.esito && !s.esitoMostrato) {
+      if (vista.esito && !s.esitoMostrato && vista.banda?.membri?.includes(s.mioId)) {
         s.esitoMostrato = vista.esito;
         if (s.sonoHost && s.partita?.esito?.quote) s.esitoMostrato = s.partita.esito;
         audio.allarme(false);
@@ -928,7 +1104,12 @@ function ciclo(ora) {
       suoni(vista, me);
       const auto = me.inAuto !== null ? (io.auto ?? vista.veicoli.find(v => v.id === me.inAuto)) : null;
       const nostra = vista.veicoli.find(v => v.nostro);
-      const meta = vista.fase === 'colpo' ? (vista.fuga.attiva || vista.missione?.fatto ? amb.rifugio : amb.luogoDi(vista.colpo)?.ingresso) : null;
+      const nellaBanda = vista.banda?.membri?.includes(s.mioId);
+      const meta = vista.fase === 'colpo' && nellaBanda ? (vista.fuga.attiva || vista.missione?.fatto ? amb.rifugio : amb.luogoDi(vista.colpo)?.ingresso) : null;
+      if (s.chiamata && performance.now() > s.chiamata.fino) {
+        s.chiamata = null;
+        mostraChiamata();
+      }
       hud.aggiorna({
         vista, me: { ...me, x: io.x, z: io.z, yaw: posa.yaw }, interazione, arma: armaVisibile ? arma : null, rete: testoRete(), fps, mira: io.inMira,
         soldi: s.riassunto?.giocatori?.[s.nome]?.soldi ?? null, obiettivo: obiettivo(vista, me),
@@ -967,7 +1148,9 @@ function suoni(vista, me) {
 }
 
 function costruisciRuoli() {
-  $('ruoli').innerHTML = ELENCO_RUOLI.map(r => `<button type="button" class="ruolo" data-ruolo="${r}" aria-pressed="${r === s.ruolo}"><b>${RUOLI[r].nome}</b>${RUOLI[r].abilita}</button>`).join('');
+  const giri = ['-3deg', '2deg', '-1.5deg', '3deg'];
+  const breve = { scassinatore: 'Serrature e casseforti a orecchio', hacker: 'Telecamere, porte elettroniche', autista: 'Auto senza chiavi, guida da paura', azione: 'Due sacchi, ostaggi, botte' };
+  $('ruoli').innerHTML = ELENCO_RUOLI.map((r, i) => `<button type="button" class="segnaletica" style="--giro:${giri[i % giri.length]}" title="${RUOLI[r].abilita}" data-ruolo="${r}" aria-pressed="${r === s.ruolo}"><span class="foto"><img src="./copertina/ritratto-${r}.png" alt="" onerror="this.remove()"></span><span class="targa">N° ${427 + i * 113} · CERANO<b>${RUOLI[r].nome}</b><em>${breve[r] ?? ''}</em></span></button>`).join('');
   $('ruoli').querySelectorAll('[data-ruolo]').forEach(b => b.addEventListener('click', () => {
     s.ruolo = b.dataset.ruolo;
     salva(CHIAVE_RUOLO, s.ruolo);
@@ -991,38 +1174,25 @@ function leggiNome() {
   return nome;
 }
 
-$('crea').addEventListener('click', () => {
-  if (leggiNome()) entraInStanza(true, codiceStanza());
-});
-$('entra').addEventListener('click', () => {
-  if (!leggiNome()) return;
-  const codice = normalizzaCodice($('codice').value);
-  if (!codice) {
-    errore('Il codice ha 4 lettere (es. KXRT).');
-    $('codice').focus();
-    return;
-  }
-  entraInStanza(false, codice);
+$('entra-citta').addEventListener('click', () => {
+  if (!gioco || s.fase === 'gioco') return;
+  if (leggiNome()) entraInCitta();
 });
 $('modulo-inizio').addEventListener('submit', e => e.preventDefault());
 $('nome').addEventListener('keydown', e => {
-  if (e.key !== 'Enter' || $('crea').disabled) return;
+  if (e.key !== 'Enter') return;
   e.preventDefault();
-  ($('codice').value.trim() ? $('entra') : $('crea')).click();
+  $('entra-citta').click();
 });
-$('copia').addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText($('link').value);
-    $('copia').textContent = 'Copiato!';
-  } catch {
-    $('link').select();
-    $('copia').textContent = 'Premi Ctrl+C';
-  }
-});
-$('parti').addEventListener('click', () => partiComeHost(null));
+$('chiamata-si').addEventListener('click', () => rispondi(true));
+$('chiamata-no').addEventListener('click', () => rispondi(false));
 $('pannello-chiudi').addEventListener('click', () => chiudiPannello());
 window.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && s.pannello && s.pannello !== 'esito') chiudiPannello();
+  if ((e.key === 'Escape' || (e.code === 'KeyP' && s.pannello === 'telefono')) && s.pannello && s.pannello !== 'esito') {
+    e.preventDefault();
+    chiudiPannello();
+  } else if (s.chiamata && e.code === 'KeyY') rispondi(true);
+  else if (s.chiamata && e.code === 'KeyN') rispondi(false);
 });
 comandi.suBlocco(bloccato => {
   if (bloccato) audio.prepara();
@@ -1036,13 +1206,8 @@ $('grafica').addEventListener('change', () => {
   if (pulisciNome($('nome').value)) salva(CHIAVE_NOME, pulisciNome($('nome').value));
   location.reload();
 });
-const codiceInvito = normalizzaCodice(PARAMETRI.get('stanza'));
-if (codiceInvito) {
-  $('codice').value = codiceInvito;
-  $('crea').classList.remove('primario');
-  $('entra').classList.add('primario');
-}
 costruisciRuoli();
+const copertina = avviaCopertina();
 mostraSchermata('schermata-inizio');
 $('nome').focus();
 
@@ -1054,9 +1219,8 @@ async function avvia() {
   gioco = await creaGioco3d(mondo, amb);
   hud.preparaMinimappa(amb.citta);
   $('carico').hidden = true;
-  $('crea').disabled = false;
-  $('crea').textContent = 'Crea una stanza';
-  $('entra').disabled = false;
+  $('entra-citta').disabled = false;
+  $('entra-citta').querySelector('span').textContent = 'ENTRA IN CERANO';
   requestAnimationFrame(ciclo);
   const orologio = new Worker(new URL('./orologio-worker.js', import.meta.url));
   orologio.onmessage = tick;
@@ -1082,8 +1246,9 @@ if (import.meta.env.DEV) {
       Object.assign(io, { yaw, pitch });
     },
     azione: a => inviaAzione(a),
-    parti: colpo => partiComeHost(colpo),
-    partiSenzaAvviso: colpo => iniziaPartita(semeCasuale(), colpo),
+    parti: colpo => avviaColpoDiProva(colpo),
+    partiSenzaAvviso: colpo => avviaColpoDiProva(colpo),
+    entra: () => entraInCitta(),
     mondo: () => mondo,
     interazione: () => scegliInterazione(s.vista, s.vista?.giocatori.find(g => g.id === s.mioId)),
     spara: () => {

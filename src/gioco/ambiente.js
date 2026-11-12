@@ -2,6 +2,7 @@ import { preparaCitta } from '../citta/citta.js';
 import { baricentro } from '../citta/geometria.js';
 import { preparaLuogo, registraCollisioni } from './luoghi.js';
 import { creaNavigazione } from './navigazione.js';
+import { preparaVita } from './vita.js';
 import { COLPI, PREPARAZIONI, conInterni } from './colpi/indice.js';
 
 export const RIFUGIO = Object.freeze({ edificio: 1228609824, nome: 'La cascina di Via Ranzina' });
@@ -35,16 +36,19 @@ export function creaAmbiente(dati) {
   const rifugioAuto = [cx + (dx / l) * (l * 0.7) - (dz / l) * 3, cz + (dz / l) * (l * 0.7) + (dx / l) * 3];
   const rifugioYaw = Math.atan2(dx / l, dz / l);
   const nav = new Map();
+  const vita = preparaVita(citta);
   return {
-    citta, luoghi, porte, nav, rifugio, rifugioAuto, rifugioYaw, cascina, esclusi,
+    citta, luoghi, porte, nav, vita, rifugio, rifugioAuto, rifugioYaw, cascina, esclusi,
     luogoDi(id) {
       if (luoghi.has(id)) return luoghi.get(id);
       const prep = id?.startsWith('prep:') ? PREPARAZIONI[id.slice(5)] : null;
       return prep?.luogo ? luoghi.get(prep.luogo) : null;
     },
     navigazione(id) {
+      if (!id) return null;
       if (!nav.has(id)) {
         const luogo = this.luogoDi(id);
+        if (!luogo) return null;
         const [x, z] = luogo.centro;
         nav.set(id, creaNavigazione(citta.collisioni, { x0: x - MARGINE_NAV, z0: z - MARGINE_NAV, x1: x + MARGINE_NAV, z1: z + MARGINE_NAV }, { filtro: s => !s.porta }));
       }

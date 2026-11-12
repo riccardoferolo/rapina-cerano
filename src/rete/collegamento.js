@@ -230,7 +230,7 @@ export function collegaHost({ segnali, mioId, soloRiserva = false, massimo = OSP
     stati.avvisa();
   }
 
-  segnali.suMessaggio(msg => {
+  const smetti = segnali.suMessaggio(msg => {
     if (!msg || msg.tipo !== 'ciao' || typeof msg.da !== 'string' || msg.da === mioId || ospiti.has(msg.da)) return;
     for (const [id, peer] of [...ospiti]) if (!attivo(peer)) rimuovi(id);
     if (ospiti.size >= massimo) {
@@ -263,9 +263,13 @@ export function collegaHost({ segnali, mioId, soloRiserva = false, massimo = OSP
       ospiti.get(id)?.invia(m, opzioni);
     },
     rimuovi,
-    chiudi() {
+    chiudiConnessione() {
+      smetti();
       for (const peer of ospiti.values()) peer.chiudiConnessione();
       ospiti.clear();
+    },
+    chiudi() {
+      this.chiudiConnessione();
       segnali.chiudi();
     },
   };

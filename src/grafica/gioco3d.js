@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { caricaArmi, creaMaterialiArmi } from './armi3d.js';
 import { creaVista1p } from './vista1p.js';
-import { caricaPersonaggio, creaFolla } from './persone3d.js';
+import { caricaPersonaggi, creaFolla } from './persone3d.js';
 import { creaMaterialiAuto, creaParco, costruisciParcheggi } from './auto3d.js';
 import { creaMaterialiInterni, costruisciLuogo, creaDinamicheLuogo } from './luoghi3d.js';
 import { SACCHI } from '../gioco/regole.js';
@@ -135,7 +135,8 @@ function costruisciRifugio(scena, amb, mat) {
 }
 
 export async function creaGioco3d(mondo, amb) {
-  const [libreria, personaggio] = await Promise.all([caricaArmi(), caricaPersonaggio()]);
+  const personaggi = caricaPersonaggi();
+  const [libreria] = await Promise.all([caricaArmi(), personaggi.prima]);
   const materialiArmi = creaMaterialiArmi({}, libreria);
   const matInterni = creaMaterialiInterni();
   const matAuto = creaMaterialiAuto();
@@ -150,7 +151,7 @@ export async function creaGioco3d(mondo, amb) {
   const rifugio = costruisciRifugio(scena, amb, matInterni);
   mondo.lampioni.teste.push(rifugio.luce);
   const parcheggi = costruisciParcheggi(scena, amb.citta.parcheggi, matAuto);
-  const folla = creaFolla(scena, personaggio, materialiArmi);
+  const folla = creaFolla(scena, personaggi, materialiArmi);
   const parco = creaParco(scena, matAuto);
   const sacchi = creaSacchi3d(scena);
   const tracce = creaTracce(scena);

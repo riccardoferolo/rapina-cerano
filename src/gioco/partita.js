@@ -5,6 +5,11 @@ import { bloccaVista } from './luoghi.js';
 import { allestisci } from './allestimento.js';
 import { puntoAvanti } from '../citta/strade.js';
 import { definizione } from './colpi/indice.js';
+import { aspettoDi } from './aspetto.js';
+import { aggiornaVita, rubaDalTraffico } from './vita.js';
+
+const LUOGO_CITTA = Object.freeze({ privata: () => false, dentro: () => false, centro: [0, 0], porte: [], ingresso: null });
+const ALLARME_CITTA_S = 150;
 
 const TOLLERANZA_POSIZIONE = 1.2;
 const VISTA_OGNI = 0.12;
@@ -60,25 +65,42 @@ export function creaRifugio({ seme, giocatori = [], campagna = null, ambiente })
   return stato;
 }
 
-export function creaPartita({ seme, colpo, giocatori = [], campagna = null, ambiente }) {
+const CAMPI_COLPO = Object.freeze({
+  png: () => [], telecamere: () => [], luogo: () => null, scadenza: () => null, antipanico: () => true, prelievo: () => null, tessera: () => false,
+  fotografie: () => false, missione: () => null, oggetti: () => [], porte: () => ({}), casseforti: () => [], biglietti: () => [], casse: () => [],
+  vetrine: () => [], pulsanti: () => [], esito: () => null, attrezzi: () => ({}), campagna: () => null, semeColpo: () => null,
+  allarme: () => ({ attivo: false, tempo: 0, motivo: null, polizia: null, lineaTagliata: false, ritardo: 0, punto: null }),
+  polizia: () => ({ ondata: 0, prossima: null, arrivate: 0 }),
+  statistiche: () => ({ uccisi: 0, legati: 0, sparatoria: false, inizio: 0 }),
+  fuga: () => ({ polizia: false, lontano: 0, attiva: false }),
+});
+
+function statoBase(seme) {
+  const stato = { seme: seme >>> 0, rng: (seme ^ 0x9e3779b9) >>> 0, tempo: 0, fase: 'mondo', colpo: null, prossimoId: 1, giocatori: [], sacchi: [], veicoli: [], banda: { capo: null, membri: [], colpo: null, inviti: {} } };
+  for (const [k, f] of Object.entries(CAMPI_COLPO)) stato[k] = f();
+  return stato;
+}
+
+/** Il mondo aperto senza colpo in corso: si gira per Cerano, si chiama la banda, si parte. */
+export function creaMondoAperto({ seme }) {
+  return statoBase(seme);
+}
+
+/** Accende un colpo dentro il mondo già vivo: personaggi, porte, casseforti, telecamere, auto della fuga. */
+export function allestisciColpo(stato, { seme, colpo, campagna = null, ambiente }) {
   const luogo = ambiente.luogoDi(colpo);
   const def = definizione(colpo);
   const preparazioni = campagna?.preparazioni ?? [];
   const set = allestisci(def, seme, luogo, ambiente.citta);
-  const stato = {
-    seme: seme >>> 0,
-    rng: (seme ^ 0x9e3779b9) >>> 0,
-    tempo: 0,
+  Object.assign(stato, {
     fase: 'colpo',
     colpo,
-    prossimoId: 1,
-    giocatori: [],
-    png: [],
+    semeColpo: seme >>> 0,
     telecamere: set.telecamere.map(t => ({ ...t, yaw0: t.yaw, stato: 'attiva', sospetto: 0, loopFino: 0, fase: caso({ rng: seme }) * 6 })),
     luogo: luogo.def.id,
-    scadenza: def.scadenza ?? def.prelievo?.tempo ?? null,
+    scadenza: def.scadenza ?? (def.prelievo ? stato.tempo + def.prelievo.tempo : null),
     antipanico: true,
-    prelievo: def.prelievo ? { ...def.prelievo, avvisi: [] } : null,
+    prelievo: def.prelievo ? { ...def.prelievo, tempo: stato.tempo + def.prelievo.tempo, avvisi: [] } : null,
     tessera: preparazioni.includes('tessera'),
     fotografie: preparazioni.includes('fotografie'),
     missione: def.preparazione ? { tipo: def.preparazione, fatto: false, foto: [], obiettivi: set.foto ?? [] } : null,
@@ -89,35 +111,77 @@ export function creaPartita({ seme, colpo, giocatori = [], campagna = null, ambi
     casse: set.casse.map(c => ({ ...c, piena: true })),
     vetrine: set.vetrine.map(v => ({ ...v, rotta: false, vuota: false })),
     pulsanti: set.pulsanti,
-    sacchi: [],
-    veicoli: [],
-    allarme: { attivo: false, tempo: 0, motivo: null, polizia: null, lineaTagliata: preparazioni.includes('linea'), ritardo: 0 },
-    polizia: { ondata: 0, prossima: null, arrivate: 0 },
+    png: [],
+    allarme: { ...CAMPI_COLPO.allarme(), lineaTagliata: preparazioni.includes('linea') },
+    polizia: CAMPI_COLPO.polizia(),
     esito: null,
-    statistiche: { uccisi: 0, legati: 0, sparatoria: false, inizio: 0 },
+    statistiche: { ...CAMPI_COLPO.statistiche(), inizio: stato.tempo },
     campagna,
     attrezzi: { ...(campagna?.attrezzi ?? {}), termico: preparazioni.includes('trapano') },
-    fuga: { polizia: false, lontano: 0, attiva: false },
-  };
+    fuga: CAMPI_COLPO.fuga(),
+  });
+  stato.sacchi = stato.sacchi.filter(s => s.portatoDa !== null || s.veicolo !== null);
   for (const s of set.sacchi) creaSacco(stato, s.tipo, s.valore, s.x, 0.25, s.z);
   for (const p of set.png) {
     const tipo = PNG[p.tipo];
     const g0 = p.giro[p.inizio];
     stato.png.push({
-      id: stato.prossimoId++, tipo: p.tipo, nome: p.nome, cliente: p.cliente, x: g0.x, z: g0.z, yaw: 0, vita: tipo.vita,
+      id: stato.prossimoId++, tipo: p.tipo, nome: p.nome, cliente: p.cliente, aspetto: aspettoDi({ tipo: p.tipo, nome: p.nome, id: p.indice, aspetto: p.aspetto }), x: g0.x, z: g0.z, yaw: 0, vita: tipo.vita,
       stato: 'giro', sospetto: 0, giro: p.giro, tappa: p.inizio, sosta: g0.sosta, timer: 0, punto: null, bersaglio: null,
       attesaVista: caso(stato) * VISTA_OGNI, attesaSparo: 1, uscita: p.uscita, visto: null, motivo: null, percorso: null, ip: 0, tessera: p.tessera, indice: p.indice,
     });
   }
+  for (const v of stato.veicoli) v.nostro = false;
   const a = set.auto;
-  stato.veicoli.push(creaVeicolo(stato.prossimoId++, campagna?.veicolo ?? def.auto?.tipo ?? 'utilitaria', a.x, a.z, a.yaw, { nostro: true, acceso: false }));
-  if (set.blindato) stato.veicoli.push(creaVeicolo(stato.prossimoId++, 'blindato', set.blindato.x, set.blindato.z, set.blindato.yaw, { blindato: true }));
-  if (set.daRubare) stato.veicoli.push(creaVeicolo(stato.prossimoId++, 'furgone', set.daRubare.x, set.daRubare.z, set.daRubare.yaw, { daRubare: true, colore: 0xdcdcd6 }));
-  giocatori.forEach(g => aggiungiGiocatore(stato, g));
+  stato.veicoli.push(creaVeicolo(stato.prossimoId++, campagna?.veicolo ?? def.auto?.tipo ?? 'utilitaria', a.x, a.z, a.yaw, { nostro: true, acceso: false, delColpo: true }));
+  if (set.blindato) stato.veicoli.push(creaVeicolo(stato.prossimoId++, 'blindato', set.blindato.x, set.blindato.z, set.blindato.yaw, { blindato: true, delColpo: true }));
+  if (set.daRubare) stato.veicoli.push(creaVeicolo(stato.prossimoId++, 'furgone', set.daRubare.x, set.daRubare.z, set.daRubare.yaw, { daRubare: true, colore: 0xdcdcd6, delColpo: true }));
   return stato;
 }
 
-export function aggiungiGiocatore(stato, { id, nome, ruolo = 'scassinatore', attrezzi = [], potenziamenti = [] }) {
+/** Spegne il colpo finito: il mondo resta, la banda si scioglie dal colpo e la città torna tranquilla. */
+export function chiudiColpo(stato) {
+  for (const [k, f] of Object.entries(CAMPI_COLPO)) stato[k] = f();
+  stato.fase = 'mondo';
+  stato.colpo = null;
+  stato.sacchi = [];
+  for (const g of stato.giocatori) {
+    g.sacchi = [];
+    g.maschera = false;
+    g.uso = null;
+    if (g.stato === 'terra' || g.stato === 'arrestato') {
+      g.stato = 'vivo';
+      g.vita = g.vitaMax;
+    }
+  }
+  const tenuti = stato.veicoli.filter(v => !v.polizia && !v.blindato && !v.daRubare && (!v.delColpo || v.posti.some(Boolean)));
+  for (const v of tenuti) {
+    v.sacchi = [];
+    v.nostro = false;
+    v.libera = true;
+    v.delColpo = false;
+  }
+  const dentro = new Set(tenuti.map(v => v.id));
+  for (const g of stato.giocatori) {
+    if (g.inAuto !== null && !dentro.has(g.inAuto)) {
+      g.inAuto = null;
+      g.posto = -1;
+      g.teletrasporto += 1;
+    }
+  }
+  stato.veicoli = tenuti;
+  stato.banda.colpo = null;
+}
+
+export function creaPartita({ seme, colpo, giocatori = [], campagna = null, ambiente }) {
+  const stato = statoBase(seme);
+  allestisciColpo(stato, { seme, colpo, campagna, ambiente });
+  giocatori.forEach(g => aggiungiGiocatore(stato, g));
+  stato.banda = { capo: giocatori[0]?.id ?? null, membri: giocatori.map(g => g.id), colpo, inviti: {} };
+  return stato;
+}
+
+export function aggiungiGiocatore(stato, { id, nome, ruolo = 'scassinatore', attrezzi = [], potenziamenti = [], posizione = null }) {
   const esistente = stato.giocatori.find(g => g.id === id);
   if (esistente) {
     esistente.nome = nome;
@@ -137,6 +201,7 @@ export function aggiungiGiocatore(stato, { id, nome, ruolo = 'scassinatore', att
     armi: [info.arma, ...(attrezzi.includes('carabina') ? ['carabina'] : [])], inAuto: null, posto: -1, uso: null, fascette: attrezzi.includes('fascette') ? 8 : R.FASCETTE,
     attrezzi, potenziamenti, kit: attrezzi.includes('kit'), ultimoDanno: -99, teletrasporto: 1, bottinoPortato: 0, uccisioni: 0,
   };
+  if (posizione) Object.assign(g, { x: posizione.x, z: posizione.z, yaw: posizione.yaw ?? 0 });
   stato.giocatori.push(g);
   return g;
 }
@@ -165,6 +230,8 @@ function lasciaSacco(stato, g, s) {
 
 const vivi = stato => stato.giocatori.filter(g => g.stato === 'vivo');
 const auto = stato => stato.veicoli.find(v => v.nostro);
+export const membriBanda = stato => (stato.banda?.membri?.length ? stato.giocatori.filter(g => stato.banda.membri.includes(g.id)) : stato.giocatori);
+const usabile = v => v.nostro || v.libera;
 
 function rumore(stato, x, z, raggio, tipo, eventi) {
   eventi.push({ k: 'rumore', x, z, raggio, tipo });
@@ -184,12 +251,13 @@ function rumore(stato, x, z, raggio, tipo, eventi) {
   }
 }
 
-export function scattaAllarme(stato, motivo, eventi) {
+export function scattaAllarme(stato, motivo, eventi, punto = null) {
   const a = stato.allarme;
   if (a.attivo) return;
   a.attivo = true;
   a.tempo = stato.tempo;
   a.motivo = motivo;
+  a.punto = punto;
   const n = stato.giocatori.length;
   const hacker = stato.giocatori.some(g => g.ruolo === 'hacker');
   const centralino = stato.giocatori.some(g => g.potenziamenti.includes('Centralino'));
@@ -397,7 +465,7 @@ function aggiornaPng(stato, amb, luogo, dt, eventi) {
             p.timer = 0;
           } else if (p.meta.fuga) {
             p.stato = 'fuggito';
-            if (!stato.allarme.attivo) scattaAllarme(stato, `${p.nome ?? 'un testimone'} è scappato in strada urlando`, eventi);
+            if (!stato.allarme.attivo) scattaAllarme(stato, p.passante ? `${p.nome} ha chiamato i carabinieri` : `${p.nome ?? 'un testimone'} è scappato in strada urlando`, eventi, [p.x, p.z]);
           }
         }
         break;
@@ -810,7 +878,12 @@ export function interazioni(stato, amb, g) {
   for (const p of stato.png) {
     if (p.stato === 'a terra' && g.fascette > 0) metti(`lega:${p.id}`, p.x, p.z, 0.6, `Lega con le fascette (${g.fascette})`, tempoAzione('lega', ruolo), { maschera: true });
   }
-  if (v) {
+  for (const v of stato.veicoli) {
+    if (v.traffico && Math.hypot(v.x - g.x, v.z - g.z) < 3.2 && velocita(v) < 2.5) {
+      const [x, z] = puntiVeicolo(v).portaGuida;
+      metti(`ruba:${v.id}`, x, z, 1, ruolo === 'autista' ? 'Tira giù l\'autista e prendi l\'auto' : 'Ruba l\'auto (l\'autista scappa urlando)', ruolo === 'autista' ? 0.6 : 1.4, { distanza: 2.6 });
+    }
+    if (!usabile(v) || Math.hypot(v.x - g.x, v.z - g.z) > 7) continue;
     const pv = puntiVeicolo(v);
     if (g.sacchi.length && caricabile(stato, v)) metti(`bagagliaio:${v.id}`, pv.bagagliaio[0], pv.bagagliaio[1], 0.8, 'Metti il sacco nel bagagliaio', 0, { distanza: 2.4 });
     const porte = [['guida', pv.portaGuida, 0], ['passeggero', pv.portaPasseggero, 1], ['dietroSx', pv.portaDietroSx, 2], ['dietroDx', pv.portaDietroDx, 3]];
@@ -1046,6 +1119,22 @@ function completaUso(stato, amb, g, chiave, eventi) {
       if (v) entraAuto(stato, g, v, Number(extra), eventi);
       break;
     }
+    case 'ruba': {
+      const v = stato.veicoli.find(x => x.id === Number(id));
+      if (!v || !rubaDalTraffico(stato, v)) break;
+      const [x, z] = puntiVeicolo(v).portaGuida;
+      const autista = {
+        id: stato.prossimoId++, tipo: 'civile', nome: 'L\'autista derubato', passante: true, aspetto: aspettoDi({ id: v.id }), x, z, yaw: v.yaw, vita: PNG.civile.vita,
+        stato: 'giro', sospetto: 0, giro: [{ x, z, sosta: 1 }], tappa: 0, sosta: 1, timer: 0, punto: null, attesaVista: 0, attesaSparo: 1,
+        uscita: [x + Math.sin(v.yaw) * 45, z + Math.cos(v.yaw) * 45], visto: null, percorso: null, ip: 0, indice: v.id,
+      };
+      stato.png.push(autista);
+      panico(stato, autista, eventi);
+      rumore(stato, x, z, 18, 'grido', eventi);
+      entraAuto(stato, g, v, 0, eventi);
+      messaggio(eventi, 'Auto rubata: chi ti ha visto chiamerà i carabinieri', 'avviso', g.id);
+      break;
+    }
     case 'esci':
       esciAuto(stato, g, eventi);
       break;
@@ -1181,7 +1270,7 @@ function aggiornaPolizia(stato, amb, dt, eventi) {
   const pol = stato.polizia;
   if (!stato.allarme.attivo || pol.prossima === null || stato.tempo < pol.prossima) return;
   const luogo = amb.luogoDi(stato.colpo);
-  const def = definizione(stato.colpo).polizia ?? {};
+  const def = stato.colpo ? definizione(stato.colpo).polizia ?? {} : { agenti: 2 };
   const n = stato.giocatori.length;
   const ostaggi = stato.png.filter(p => p.stato === 'legato' || p.stato === 'a terra').length;
   const volanti = Math.max(1, Math.ceil(((def.agenti ?? POLIZIA.agentiBase) + pol.ondata * POLIZIA.agentiPerOndata + (n - 1) * POLIZIA.rinforziPerGiocatore) / AGENTI_PER_VOLANTE));
@@ -1189,7 +1278,8 @@ function aggiornaPolizia(stato, amb, dt, eventi) {
   pol.prossima = stato.tempo + POLIZIA.ondataOgni + ostaggi * POLIZIA.tempoPerOstaggio;
   messaggio(eventi, pol.ondata === 1 ? 'Sirene! Arriva la polizia' : `Rinforzi della polizia (ondata ${pol.ondata})`, 'allarme');
   eventi.push({ k: 'ondata', n: pol.ondata });
-  for (let i = 0; i < volanti; i++) mandaVolante(stato, amb, luogo.ingresso, eventi, 'assalto');
+  const meta = luogo?.ingresso ?? stato.allarme.punto ?? [0, 0];
+  for (let i = 0; i < volanti; i++) mandaVolante(stato, amb, meta, eventi, 'assalto');
 }
 
 function puntoPartenza(stato, amb, verso, distanzaVoluta) {
@@ -1234,7 +1324,7 @@ function guidaAI(stato, amb, v, dt) {
   }
   const fine = v.percorso[v.percorso.length - 1];
   const resto = Math.hypot(fine.x - v.x, fine.z - v.z);
-  const limite = v.compito === 'insegui' ? 30 : 17;
+  const limite = v.compito === 'insegui' ? 30 : v.limite ?? 17;
   const curva = Math.max(6, limite * (1 - Math.min(0.75, Math.abs(diffLontano) * 0.85)));
   const frenata = v.compito === 'insegui' ? Infinity : Math.min(resto * 0.7 + 2, 4 + resto * 0.3);
   v.controllo = (v.controllo ?? 3) - dt;
@@ -1279,7 +1369,7 @@ function aggiornaVolanti(stato, amb, dt, eventi) {
             const p = puntiVeicolo(v);
             const [x, z] = i === 0 ? p.portaGuida : p.portaPasseggero;
             stato.png.push({
-              id: stato.prossimoId++, tipo: 'poliziotto', nome: 'Agente', x, z, yaw: v.yaw, vita: PNG.poliziotto.vita, stato: 'combatte', sospetto: 1,
+              id: stato.prossimoId++, tipo: 'poliziotto', nome: 'Agente', aspetto: 'guardia', x, z, yaw: v.yaw, vita: PNG.poliziotto.vita, stato: 'combatte', sospetto: 1,
               giro: [{ x, z, sosta: 5 }], tappa: 0, sosta: 5, timer: 0, attesaVista: 0, attesaSparo: 1 + caso(stato), uscita: [x, z], percorso: null, ip: 0,
             });
           }
@@ -1308,8 +1398,8 @@ function aggiornaFuga(stato, amb, dt, eventi) {
   const v = auto(stato);
   if (!v) return;
   const luogo = amb.luogoDi(stato.colpo);
-  const dentro = vivi(stato).filter(g => g.inAuto === v.id);
-  const attivi = stato.giocatori.filter(g => g.stato !== 'arrestato');
+  const dentro = membriBanda(stato).filter(g => g.stato === 'vivo' && g.inAuto === v.id);
+  const attivi = membriBanda(stato).filter(g => g.stato !== 'arrestato');
   const lontanoColpo = Math.hypot(v.x - luogo.centro[0], v.z - luogo.centro[1]);
   if (!stato.fuga.attiva && v.guidatore && lontanoColpo > ZONA_CALDA * 0.4 && dentro.length >= attivi.filter(g => g.stato === 'vivo').length) {
     stato.fuga.attiva = true;
@@ -1371,11 +1461,12 @@ function concludi(stato, vinto, eventi) {
   const lordo = sacchi.reduce((t, s) => t + s.valore, 0);
   const pulito = !stato.allarme.attivo;
   const bonus = pulito ? Math.round(lordo * 0.2) : 0;
-  const arrestati = stato.giocatori.filter(g => g.stato === 'arrestato').length;
+  const banda = membriBanda(stato);
+  const arrestati = banda.filter(g => g.stato === 'arrestato').length;
   stato.esito = {
-    vinto, lordo, bonus, totale: vinto ? lordo + bonus : 0, pulito, sacchi: sacchi.length, durata: Math.round(stato.tempo),
+    vinto, lordo, bonus, totale: vinto ? lordo + bonus : 0, pulito, sacchi: sacchi.length, durata: Math.round(stato.tempo - (stato.statistiche.inizio ?? 0)),
     arrestati, uccisi: stato.statistiche.uccisi, legati: stato.statistiche.legati, preparazione: stato.missione?.tipo ?? null,
-    giocatori: stato.giocatori.map(g => ({ id: g.id, nome: g.nome, ruolo: g.ruolo, stato: g.stato, uccisioni: g.uccisioni })),
+    giocatori: banda.map(g => ({ id: g.id, nome: g.nome, ruolo: g.ruolo, stato: g.stato, uccisioni: g.uccisioni })),
   };
   stato.fase = 'fine';
   eventi.push({ k: 'fine', ...stato.esito });
@@ -1383,8 +1474,9 @@ function concludi(stato, vinto, eventi) {
 
 function controllaSconfitta(stato, eventi) {
   if (stato.esito) return;
-  const attivi = stato.giocatori.filter(g => g.stato === 'vivo');
-  if (stato.giocatori.length && !attivi.length) {
+  const banda = membriBanda(stato);
+  const attivi = banda.filter(g => g.stato === 'vivo');
+  if (banda.length && !attivi.length) {
     messaggio(eventi, 'Siete tutti a terra: la polizia vi ha presi', 'allarme');
     concludi(stato, false, eventi);
   }
@@ -1396,6 +1488,25 @@ export function sincronizzaPorte(stato, amb) {
   for (const [id, seg] of segmenti) seg.attivo = !stato.porte[id]?.aperta;
 }
 
+function raffreddaCitta(stato, eventi) {
+  const a = stato.allarme;
+  if (!a.attivo || stato.colpo || stato.tempo - a.tempo < ALLARME_CITTA_S) return;
+  Object.assign(a, { attivo: false, motivo: null, punto: null });
+  stato.polizia = { ondata: 0, prossima: null, arrivate: 0 };
+  stato.veicoli = stato.veicoli.filter(v => !v.polizia || v.posti.some(Boolean));
+  stato.png = stato.png.filter(p => p.tipo !== 'poliziotto');
+  messaggio(eventi, 'La polizia ha smesso di cercarvi', 'bene');
+}
+
+function fermaAutoLibere(stato, amb, dt) {
+  for (const v of stato.veicoli) {
+    if (v.guidatore || !usabile(v)) continue;
+    if (Math.hypot(v.vx, v.vz) < 0.02 && Math.abs(v.w ?? 0) < 0.02 && !v.daSistemare) continue;
+    v.daSistemare = false;
+    guida(v, { gas: 0, sterzo: 0, mano: true }, dt, { collisioni: amb.citta.collisioni, ostacoli: stato.veicoli.filter(o => o !== v && Math.hypot(o.x - v.x, o.z - v.z) < 9) });
+  }
+}
+
 export function passo(stato, dt, { posizioni = {}, azioni = [] } = {}, amb) {
   const eventi = [];
   stato.tempo += dt;
@@ -1403,9 +1514,19 @@ export function passo(stato, dt, { posizioni = {}, azioni = [] } = {}, amb) {
     aggiornaGiocatori(stato, amb, posizioni, dt, eventi);
     return eventi;
   }
-  luogoCorrente = amb.luogoDi(stato.colpo);
+  luogoCorrente = amb.luogoDi(stato.colpo) ?? LUOGO_CITTA;
   stato.percorsiPasso = 0;
-  if (stato.fase !== 'colpo') return eventi;
+  if (stato.fase !== 'colpo') {
+    eseguiAzioni(stato, amb, azioni, eventi);
+    aggiornaGiocatori(stato, amb, posizioni, dt, eventi);
+    aggiornaPng(stato, amb, luogoCorrente, dt, eventi);
+    aggiornaVita(stato, amb, dt, () => caso(stato), guidaAI);
+    aggiornaPolizia(stato, amb, dt, eventi);
+    aggiornaVolanti(stato, amb, dt, eventi);
+    raffreddaCitta(stato, eventi);
+    fermaAutoLibere(stato, amb, dt);
+    return eventi;
+  }
   sincronizzaPorte(stato, amb);
   const luogo = luogoCorrente;
   eseguiAzioni(stato, amb, azioni, eventi);
@@ -1416,11 +1537,11 @@ export function passo(stato, dt, { posizioni = {}, azioni = [] } = {}, amb) {
   aggiornaBlindato(stato, amb, dt, eventi);
   aggiornaCasseforti(stato, dt, eventi);
   aggiornaPrelievo(stato, eventi);
+  aggiornaVita(stato, amb, dt, () => caso(stato), guidaAI);
   aggiornaSacchi(stato, amb, dt, eventi);
   aggiornaPolizia(stato, amb, dt, eventi);
   aggiornaVolanti(stato, amb, dt, eventi);
-  const nostra = auto(stato);
-  if (nostra && !nostra.guidatore) guida(nostra, { gas: 0, sterzo: 0, mano: true }, dt, { collisioni: amb.citta.collisioni, ostacoli: stato.veicoli.filter(o => o !== nostra && Math.hypot(o.x - nostra.x, o.z - nostra.z) < 9) });
+  fermaAutoLibere(stato, amb, dt);
   aggiornaFuga(stato, amb, dt, eventi);
   controllaSconfitta(stato, eventi);
   return eventi;

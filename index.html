@@ -8,45 +8,45 @@
 <body>
   <div id="mondo"></div>
 
-  <section id="schermata-inizio" class="schermata" hidden>
-    <div class="scheda larga">
-      <h1>Rapina a Cerano</h1>
-      <p class="sotto">Una banda, un paese della Bassa, cinque colpi. Da 2 a 4 amici, online.</p>
-      <form id="modulo-inizio" autocomplete="off">
-        <label>Il tuo nome <input id="nome" maxlength="16" placeholder="Es. Richi"></label>
-        <div class="titoletto">Il tuo ruolo nella banda</div>
-        <div id="ruoli" class="ruoli"></div>
-        <div class="riga">
-          <label class="stretto">Grafica
-            <select id="grafica">
-              <option value="auto">Automatica</option>
-              <option value="alta">Alta</option>
-              <option value="media">Media</option>
-              <option value="bassa">Bassa (PC lenti)</option>
-            </select>
-          </label>
-          <label class="stretto">Codice stanza <input id="codice" maxlength="4" placeholder="ABCD"></label>
-        </div>
-        <div class="riga pulsanti">
-          <button type="button" id="crea" class="primario" disabled>Carico Cerano…</button>
-          <button type="button" id="entra" disabled>Entra con il codice</button>
-        </div>
-        <p id="errore-inizio" class="errore"></p>
-      </form>
-      <p class="crediti">Mappa © OpenStreetMap contributors (ODbL) · ortofoto 2010 © Regione Piemonte (CC BY 4.0) · modelli e texture CC0</p>
-    </div>
+  <section id="schermata-inizio" class="schermata titolo" hidden>
+    <div class="t-fondo"><img id="t-copertina" src="./copertina/copertina.jpg" alt=""></div>
+    <div class="t-sirena t-rossa"></div>
+    <div class="t-sirena t-blu"></div>
+    <canvas id="t-soldi"></canvas>
+    <div class="t-righe"></div>
+    <div class="t-vignetta"></div>
+    <header class="t-testata">
+      <div class="t-logo t-rosa" data-testo="RAPINA">RAPINA</div>
+      <div class="t-logo t-ciano" data-testo="A CERANO">A CERANO</div>
+      <div class="t-motto">Il paese è aperto. Le casseforti pure.</div>
+    </header>
+    <form id="modulo-inizio" class="t-modulo" autocomplete="off">
+      <label class="t-nome"><span>Come ti chiamano?</span><input id="nome" maxlength="16" placeholder="Es. Richi"></label>
+      <div class="t-titoletto">Scegli il mestiere · foto segnaletica</div>
+      <div id="ruoli" class="t-ruoli"></div>
+      <button type="button" id="entra-citta" class="t-entra" disabled><span>CARICO CERANO…</span></button>
+      <div class="t-sotto">
+        <span class="t-online"><i></i> Niente stanze, niente attese: entri e sei in città con chi c'è.</span>
+        <label>Grafica
+          <select id="grafica">
+            <option value="auto">Automatica</option>
+            <option value="alta">Alta</option>
+            <option value="media">Media</option>
+            <option value="bassa">Bassa (PC lenti)</option>
+          </select>
+        </label>
+      </div>
+      <p id="errore-inizio" class="errore"></p>
+    </form>
+    <div class="t-notizie"><span class="t-ultimora">ULTIM'ORA</span><div class="t-scorre"><span>Sirene in Piazza Crespi: assalto al supermercato «Il Paniere», il direttore: «Avevano il passamontagna e una calma da professionisti» ✦ Via Roma, sparita la cassaforte della tabaccheria ✦ Furgone portavalori senza le chiavi in Via Novara ✦ Il sindaco: «Cerano è un paese tranquillo» ✦ Visti tre individui correre verso la cascina di Via Ranzina con dei sacchi ✦ La Fontana Beato Pacifico piena di banconote ✦</span></div></div>
+    <p class="t-crediti">Mappa © OpenStreetMap contributors (ODbL) · ortofoto e altezze © Regione Piemonte, BDTRE, ARPA (CC BY 4.0) · persone MakeHuman/MPFB (CC0) · Blender · nomi di negozi e banche inventati</p>
   </section>
 
-  <section id="schermata-stanza" class="schermata" hidden>
-    <div class="scheda">
-      <h2>Stanza <span id="t-codice"></span></h2>
-      <div id="blocco-link" class="riga"><input id="link" readonly><button type="button" id="copia">Copia il link</button></div>
-      <p id="t-stato" class="stato"></p>
-      <ul id="t-giocatori" class="giocatori"></ul>
-      <button type="button" id="parti" class="primario">Andate al rifugio</button>
-      <p id="nota-stanza" class="nota"></p>
-    </div>
-  </section>
+  <div id="chiamata" class="chiamata" hidden>
+    <div class="ch-anello"></div>
+    <div class="ch-testo"><b id="chiamata-chi"></b><span id="chiamata-cosa"></span></div>
+    <div class="ch-tasti"><button type="button" id="chiamata-si">Rispondi (Y)</button><button type="button" id="chiamata-no">Rifiuta (N)</button></div>
+  </div>
 
   <section id="pannello" class="schermata pannello" hidden>
     <div class="scheda larga">

@@ -29,9 +29,9 @@ try {
   await pagina.waitForFunction(() => window.__gioco?.pronto(), null, { timeout: 120000 });
   console.log(`caricata in ${((Date.now() - inizio) / 1000).toFixed(1)} s`);
   await pagina.fill('#nome', 'Foto');
-  await pagina.click('#crea');
-  await pagina.click('#parti');
-  await pagina.waitForFunction(() => window.__gioco.stato().vista?.fase === 'rifugio', null, { timeout: 30000 });
+  await pagina.click('#entra-citta');
+  await pagina.waitForFunction(() => window.__gioco.stato().vista?.giocatori?.length >= 1, null, { timeout: 30000 });
+  await pagina.waitForTimeout(900);
   await pagina.addStyleTag({ content: '#hud { display: none !important; }' });
   await pagina.evaluate(o => window.__gioco.mondo().impostaOra(o), ORA);
   for (const p of PUNTI) {

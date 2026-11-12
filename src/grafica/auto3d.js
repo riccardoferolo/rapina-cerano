@@ -201,15 +201,17 @@ export function creaAuto(scena, tipo, materiali, colore) {
 export function creaParco(scena, materiali) {
   const auto = new Map();
   const deposito = new Map();
-  const prendi = tipo => {
-    const libere = deposito.get(tipo);
+  const chiave = (tipo, colore) => `${tipo}|${colore ?? ''}`;
+  const prendi = (tipo, colore) => {
+    const k = chiave(tipo, colore);
+    const libere = deposito.get(k);
     if (libere?.length) {
       const a = libere.pop();
       a.radice.visible = true;
       return a;
     }
-    const a = creaAuto(scena, tipo, materiali);
-    a.tipo = tipo;
+    const a = creaAuto(scena, tipo, materiali, colore ?? undefined);
+    a.tipo = k;
     return a;
   };
   return {
@@ -217,10 +219,10 @@ export function creaParco(scena, materiali) {
       for (const [tipo, n] of Object.entries(quanti)) {
         for (let i = 0; i < n; i++) {
           const a = creaAuto(scena, tipo, materiali);
-          a.tipo = tipo;
+          a.tipo = chiave(tipo, null);
           a.radice.visible = false;
-          if (!deposito.has(tipo)) deposito.set(tipo, []);
-          deposito.get(tipo).push(a);
+          if (!deposito.has(a.tipo)) deposito.set(a.tipo, []);
+          deposito.get(a.tipo).push(a);
         }
       }
     },
@@ -228,7 +230,7 @@ export function creaParco(scena, materiali) {
       const presenti = new Set();
       for (const v of veicoli ?? []) {
         presenti.add(v.id);
-        if (!auto.has(v.id)) auto.set(v.id, prendi(v.tipo));
+        if (!auto.has(v.id)) auto.set(v.id, prendi(v.tipo, v.colore));
         auto.get(v.id).aggiorna(v, dt, tempo);
       }
       for (const [id, a] of auto) {

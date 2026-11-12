@@ -1,7 +1,7 @@
 # Rapina a Cerano
 
-Rapine co-op online da 2 a 4 amici, in prima persona, nella Cerano vera (Novara) ricostruita dai dati
-OpenStreetMap. Design in [DESIGN.md](DESIGN.md).
+Mondo aperto online nella Cerano vera (Novara): chi apre il sito entra subito in città, senza stanze né lobby,
+insieme a chi c'è già (fino a 8 per città). Ci si chiama al telefono, si forma la banda e si parte per i colpi. Design in [DESIGN.md](DESIGN.md).
 
 ## Avvio in locale
 
@@ -12,6 +12,7 @@ npm test
 ```
 
 Con `?locale` i segnali passano da `BroadcastChannel` (due schede dello stesso browser), senza `?locale` da Supabase.
+Il primo che entra ospita la città; se esce, la città passa da sola al giocatore rimasto con l'id più basso.
 
 ## Comandi
 
@@ -20,6 +21,8 @@ Con `?locale` i segnali passano da `BroadcastChannel` (due schede dello stesso b
 | WASD | muoversi | gas, freno/retro, sterzo |
 | Shift / C | correre / chinarsi | — / visuale prima-terza persona |
 | F (tenuto) | usare: porte, serrature, cassaforte, sacchi, auto, fascette | scendere |
+| P | telefono: chiama la banda, scegli il colpo, si parte | — |
+| Y / N | rispondi / rifiuta una chiamata | — |
 | Q | passamontagna | — |
 | E | «A terra!»: gli ostaggi si inginocchiano | — |
 | G | lanciare il sacco | — |
@@ -43,8 +46,15 @@ Con `?locale` i segnali passano da `BroadcastChannel` (due schede dello stesso b
   Ceranese (Via Matteotti), Caveau del Municipio (Piazza Crespi, di notte). Ognuno si sblocca col precedente.
 - **Preparazioni**: fotografie di telecamere e guardia, tessera del direttore al bar, linea telefonica,
   trapano termico dal cantiere, furgone per la fuga (8 sacchi).
-- **Rifugio** nella cascina di Via Ranzina: mappa dei colpi, banco degli attrezzi, potenziamenti per ruolo,
-  spartizione del bottino. La campagna è salvata dal capo della banda.
+- **Mondo aperto**: passanti sui marciapiedi, traffico che gira per le vie (auto ferme si rubano, l'autista scappa
+  e chiama i carabinieri), un'auto tua appena entri, polizia anche fuori dai colpi.
+- **Telefono** (P): chi è in città, chiama, chi risponde entra nella banda; il capo sceglie il colpo e dà il via, il
+  colpo si accende nel mondo dov'è. Bottino a casa nella cascina di Via Ranzina, ognuno tiene i suoi soldi sul suo
+  computer. Banco degli attrezzi e mappa dei colpi nella cascina.
+- **Persone vere**: undici personaggi generati in Blender con MPFB/MakeHuman (CC0) e animati con Moveset (fermo,
+  cammina, corre, chino, guardia, pugno); la banda ha il passamontagna. Script in `strumenti/blender/`.
+- **Schermata iniziale**: copertina renderizzata in Blender con gli edifici veri di Piazza Crespi, foto
+  segnaletiche della banda, neon, sirene, banconote che volano, notiziario.
 - **Ruoli**: scassinatore, hacker, autista, uomo d'azione.
 - **Di nascosto o a sparatoria**: coni di vista con sospetto, telecamere che ruotano, rumore, antipanico,
   ostaggi con le fascette, polizia a ondate con le volanti sul grafo stradale, inseguimento fino a seminarle.
@@ -53,12 +63,13 @@ Con `?locale` i segnali passano da `BroadcastChannel` (due schede dello stesso b
 ## Prove
 
 - `npm test`: logica della città, colpi, supermercato, preparazioni, campagna, rete (34 test).
-- `node _lavoro/collaudo-due.mjs`: due giocatori in rete con Edge, dal rifugio al colpo e ritorno (20 verifiche).
+- `node _lavoro/collaudo-due.mjs`: due giocatori in rete con Edge: entrata senza lobby, chiamata, colpo, fuga,
+  spartizione e passaggio dell'host quando chi ospita esce (22 verifiche).
 - `node _lavoro/foto-colpo.mjs alta tabaccheria` e `node _lavoro/foto-citta.mjs alta tramonto`: foto e fps a 1280×720.
 
 ## Crediti
 
 Dati cartografici © OpenStreetMap contributors (ODbL). Ortofoto 2010 © Regione Piemonte (CC BY 4.0), usata per
 il colore dei tetti, dei campi e per gli alberi. Altezze degli edifici © Regione Piemonte – BDTRE, ARPA Piemonte
-(CC BY 4.0). Come riusare la mappa: [MAPPA.md](MAPPA.md). Modello del personaggio dagli esempi di three.js, armi
+(CC BY 4.0). Come riusare la mappa: [MAPPA.md](MAPPA.md). Persone generate con MPFB/MakeHuman (asset CC0) e animate con Moveset in Blender, armi
 «Ultimate Gun Pack» di Quaternius (CC0), texture Poly Haven (CC0). Nomi di negozi, banca e ditte inventati.

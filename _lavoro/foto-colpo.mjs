@@ -25,11 +25,11 @@ try {
   await pagina.goto('http://localhost:5431/?locale');
   await pagina.waitForFunction(() => window.__gioco?.pronto(), null, { timeout: 120000 });
   await pagina.fill('#nome', 'Foto');
-  await pagina.click('#crea');
-  await pagina.click('#parti');
-  await pagina.waitForFunction(() => window.__gioco.stato().vista?.fase === 'rifugio', null, { timeout: 30000 });
+  await pagina.click('#entra-citta');
+  await pagina.waitForFunction(() => window.__gioco.stato().vista?.giocatori?.length >= 1, null, { timeout: 30000 });
+  await pagina.waitForTimeout(900);
   await pagina.addStyleTag({ content: '#clicca, #messaggi { display: none !important; }' });
-  if (COLPO !== 'rifugio') {
+  if (COLPO !== 'citta') {
     await pagina.evaluate(c => window.__gioco.parti(c), COLPO);
     await pagina.waitForFunction(c => window.__gioco.stato().vista?.colpo === c, COLPO, { timeout: 30000 });
     await pagina.evaluate(() => {

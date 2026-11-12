@@ -2,7 +2,7 @@ const SENSIBILITA = 0.0022;
 const SOGLIA_ROTELLA = 60;
 const ATTESA_ROTELLA_MS = 160;
 const PITCH_MASSIMO = 1.45;
-const TASTI_GIOCO = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight', 'Space', 'KeyR', 'KeyF', 'KeyV', 'KeyQ', 'Digit1', 'Digit2', 'Digit3', 'Enter', 'NumpadEnter', 'KeyG', 'KeyM', 'KeyE', 'KeyC', 'ControlLeft', 'KeyT']);
+const TASTI_GIOCO = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ShiftLeft', 'ShiftRight', 'Space', 'KeyR', 'KeyF', 'KeyV', 'KeyQ', 'Digit1', 'Digit2', 'Digit3', 'Enter', 'NumpadEnter', 'KeyG', 'KeyM', 'KeyE', 'KeyC', 'ControlLeft', 'KeyT', 'KeyP']);
 
 export function creaComandi(superficie) {
   const premuti = new Set();
@@ -35,6 +35,7 @@ export function creaComandi(superficie) {
     else if (e.code === 'KeyE') stato.azioni.push('grida');
     else if (e.code === 'KeyC' || e.code === 'ControlLeft') stato.azioni.push('chino');
     else if (e.code === 'KeyT') stato.azioni.push('taglia');
+    else if (e.code === 'KeyP') stato.azioni.push('telefono');
     else if (e.code === 'Enter' || e.code === 'NumpadEnter') stato.azioni.push('pronto');
   }
   function suTastoSu(e) {

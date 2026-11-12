@@ -41,17 +41,18 @@ function eVeicolo(v) {
 }
 
 function eIstantanea(i) {
-  return !!i && typeof i === 'object' && numero(i.t) && ['rifugio', 'colpo', 'fine'].includes(i.f) && colpo(i.c)
+  return !!i && typeof i === 'object' && numero(i.t) && ['rifugio', 'mondo', 'colpo', 'fine'].includes(i.f) && colpo(i.c)
     && elenco(i.g, eGiocatore, 4)
-    && elenco(i.p, tupla(9))
-    && elenco(i.v, tupla(13), 40)
+    && elenco(i.p, tupla(10), 120)
+    && elenco(i.v, tupla(14), 60)
     && elenco(i.k, tupla(7), 60)
     && elenco(i.tc, tupla(3), 20)
     && elenco(i.po, tupla(3, x => testo(x, 24), numero, numero), 30)
     && elenco(i.cf, tupla(4), 10)
     && elenco(i.bl, numero, 10) && elenco(i.ca, numero, 10) && elenco(i.vt, tupla(2), 30)
     && tupla(5)(i.al) && tupla(3)(i.fu) && tupla(7)(i.mi)
-    && (i.es === null || (typeof i.es === 'object' && typeof i.es.vinto === 'boolean'));
+    && (i.es === null || (typeof i.es === 'object' && typeof i.es.vinto === 'boolean'))
+    && (i.bd === undefined || (!!i.bd && typeof i.bd === 'object' && (i.bd.c === null || testo(i.bd.c)) && elenco(i.bd.m, x => testo(x), 8) && (i.bd.k === null || colpo(i.bd.k))));
 }
 
 const AZIONI = {
@@ -64,6 +65,12 @@ const AZIONI = {
   arma: a => arma(a.arma),
   taglia: () => true,
   scegli: a => a.colpo === 'rifugio' || colpo(a.colpo),
+  chiama: a => testo(a.a),
+  rispondi: a => typeof a.si === 'boolean',
+  pianifica: a => colpo(a.colpo) && a.colpo !== null,
+  avvia: a => (a.preparazioni === undefined || elenco(a.preparazioni, x => testo(x, 24), 8)) && (a.veicolo === undefined || testo(a.veicolo, 16)),
+  lascia: () => true,
+  attrezzi: a => elenco(a.attrezzi, x => testo(x, 32), 12) && elenco(a.potenziamenti, x => testo(x, 40), 8),
   compra: a => testo(a.voce, 32),
   potenzia: a => testo(a.voce, 40),
   ruolo: a => ruolo(a.ruolo),
@@ -71,7 +78,8 @@ const AZIONI = {
 };
 
 const CONTROLLI = {
-  ciao: m => pulisciNome(m.nome) !== null && testo(m.id) && (m.ruolo === undefined || ruolo(m.ruolo)),
+  ciao: m => pulisciNome(m.nome) !== null && testo(m.id) && (m.ruolo === undefined || ruolo(m.ruolo)) && [m.x, m.z, m.yaw].every(v => v === undefined || numero(v))
+    && (m.attrezzi === undefined || elenco(m.attrezzi, x => testo(x, 32), 12)) && (m.potenziamenti === undefined || elenco(m.potenziamenti, x => testo(x, 40), 8)),
   lobby: m => pulisciNome(m.nomeHost) !== null && Array.isArray(m.giocatori) && m.giocatori.length <= 4
     && m.giocatori.every(g => g && typeof g.nome === 'string' && ruolo(g.ruolo) && typeof g.pronto === 'boolean')
     && (m.campagna === undefined || (!!m.campagna && typeof m.campagna === 'object')),

@@ -8,7 +8,7 @@ export function hashTesto(t) {
   return h >>> 0;
 }
 
-function postoAuto(citta, luogo, def, caso, opzioni = def.auto ?? {}, evita = []) {
+export function postoAuto(citta, luogo, def, caso, opzioni = def.auto ?? {}, evita = []) {
   const [ex, ez] = luogo.ingresso;
   const tipo = opzioni.tipo ?? 'utilitaria';
   const d = VEICOLI[tipo];
@@ -95,7 +95,7 @@ export function allestisci(def, seme, luogo, citta) {
       return { x, z, sosta: (sosta ?? 3) * (0.7 + caso() * 0.6) };
     });
     const inizio = Math.floor(caso() * giro.length);
-    return { indice: i, tipo: p.tipo, nome: p.nome, cliente: !!p.cliente, tessera: !!p.tessera, giro, inizio, uscita: p.uscita ? mondo(...p.uscita) : p.relativo ? relativo(-4.5, 30) : luogo.ingresso };
+    return { indice: i, tipo: p.tipo, nome: p.nome, aspetto: p.aspetto ?? null, cliente: !!p.cliente, tessera: !!p.tessera, giro, inizio, uscita: p.uscita ? mondo(...p.uscita) : p.relativo ? relativo(-4.5, 30) : luogo.ingresso };
   });
   const auto = postoAuto(citta, luogo, def, caso, def.auto ?? {}, [blindato, daRubare].filter(Boolean));
   const extra = missione(def, luogo, caso);

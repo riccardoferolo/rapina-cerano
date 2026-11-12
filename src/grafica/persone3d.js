@@ -2,25 +2,58 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as clonaScheletro } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { modelloArmaUnito } from './armi3d.js';
+import { aspettoDi, ASPETTI } from '../gioco/aspetto.js';
 
 const DISSOLVENZA = 0.25;
 const SEGUI = 14;
-const TINTE = Object.freeze({
-  guardia: 0x6f7a86, vigilante: 0x7a6e5a, poliziotto: 0x2a3654, titolare: 0xe2dccd, civile: null, giocatore: 0x4a4a4c,
-});
-const CIVILI = [0xb56a4a, 0x5a7a9a, 0x8a8a5a, 0xc0b090, 0x6a4a6a, 0x9aa0a8];
-const ARMI_PNG = Object.freeze({ guardia: 'pistola', vigilante: 'revolver', poliziotto: 'carabina' });
 const RAGGIO_VISTA = 2.5;
+const ARMI_PNG = Object.freeze({ guardia: 'pistola', vigilante: 'revolver', poliziotto: 'carabina' });
+const CLIP = Object.freeze({ fermo: 'idle_normal', cammina: 'walk_normal', corre: 'run_normal', chino: 'crouch_normal', chinoCammina: 'crouch_walk_normal', guardia: 'guard', pugno: 'punch' });
+const PASSO_CLIP = Object.freeze({ cammina: 1.35, corre: 3.6, chinoCammina: 0.9 });
+const PRIORITA = ASPETTI;
+const ALFA = /eyebrow|eyelash|short0|long0|bob0|ponytail|afro|braid/i;
+const TINTE = Object.freeze({
+  poliziotto: { polo: 0x2f3d5c, cargo: 0x262d3c },
+  vigilante: { polo: 0x55595f, cargo: 0x2b2d31 },
+});
 
-export async function caricaPersonaggio() {
-  const gltf = await new GLTFLoader().loadAsync('./modelli/soldato.glb');
+function preparaModello(gltf) {
   gltf.scene.traverse(o => {
-    if (o.isMesh) {
-      o.frustumCulled = false;
-      o.castShadow = true;
-    }
+    if (!o.isMesh) return;
+    o.frustumCulled = false;
+    o.castShadow = true;
+    const m = o.material;
+    const alfa = ALFA.test(m.name);
+    m.transparent = false;
+    m.depthWrite = true;
+    m.alphaTest = alfa ? 0.5 : 0;
+    m.side = alfa ? THREE.DoubleSide : THREE.FrontSide;
+    m.envMapIntensity = 0.6;
+    o.userData.maschera = /hood|mask/i.test(m.name);
+    o.userData.capelli = /short0|long0|bob0|ponytail|afro|braid/i.test(m.name);
+    if (o.userData.maschera) m.color.setHex(0x111214);
+    o.visible = !o.userData.maschera;
   });
   return { modello: gltf.scene, clip: new Map(gltf.animations.map(a => [a.name, a])) };
+}
+
+/** Carica i personaggi in sottofondo, prima la banda e i passanti; `pronto(nome)` dice se è già in memoria. */
+export function caricaPersonaggi() {
+  const caricatore = new GLTFLoader();
+  const pronti = new Map();
+  const promesse = new Map();
+  const carica = nome => {
+    if (!promesse.has(nome)) {
+      promesse.set(nome, caricatore.loadAsync(`./modelli/persone/${nome}.glb`).then(g => {
+        const m = preparaModello(g);
+        pronti.set(nome, m);
+        return m;
+      }));
+    }
+    return promesse.get(nome);
+  };
+  const tutti = PRIORITA.reduce((catena, nome) => catena.then(() => carica(nome)).catch(() => carica(nome)), Promise.resolve());
+  return { carica, pronto: nome => pronti.get(nome) ?? null, tutti, prima: carica(PRIORITA[0]) };
 }
 
 function etichetta(testo, colore) {
@@ -44,50 +77,57 @@ function etichetta(testo, colore) {
   return s;
 }
 
-function creaPersona(scena, personaggio, materialiArmi, { tipo, nome, colore }) {
-  const radice = new THREE.Group();
-  const postura = new THREE.Group();
-  const corpo = clonaScheletro(personaggio.modello);
-  corpo.rotation.y = Math.PI;
-  const tinta = colore ?? TINTE[tipo] ?? 0xffffff;
+function tingi(corpo, tinte) {
+  if (!tinte) return;
   corpo.traverse(o => {
     if (!o.isMesh) return;
-    o.material = [].concat(o.material).map(m => {
-      const copia = m.clone();
-      copia.color.setHex(tinta);
-      return copia;
-    });
-    if (o.material.length === 1) o.material = o.material[0];
+    const chiave = Object.keys(tinte).find(k => o.material.name.includes(k));
+    if (!chiave) return;
+    o.material = o.material.clone();
+    o.material.color.setHex(tinte[chiave]);
   });
-  let mano = null;
-  let testa = null;
-  corpo.traverse(o => {
-    if (!mano && o.isBone && /RightHand$/.test(o.name)) mano = o;
-    if (!testa && o.isBone && /Head$/.test(o.name)) testa = o;
-  });
-  postura.add(corpo);
+}
+
+function creaPersona(scena, libreria, materialiArmi, { tipo, nome, modello, tinte }) {
+  const radice = new THREE.Group();
+  const postura = new THREE.Group();
   radice.add(postura);
-  const mixer = new THREE.AnimationMixer(corpo);
+  scena.add(radice);
+  let corpo = null;
+  let mixer = null;
+  let mano = null;
   const azioni = new Map();
-  for (const [logico, clip] of Object.entries({ fermo: 'Idle', cammina: 'Walk', corre: 'Run' })) {
-    const c = personaggio.clip.get(clip);
-    if (c) azioni.set(logico, mixer.clipAction(c));
-  }
+  const maschere = [];
+  const capelli = [];
   let attuale = null;
-  const suona = n => {
-    if (attuale === n || !azioni.has(n)) return;
-    const nuova = azioni.get(n);
-    nuova.reset().play();
-    azioni.get(attuale)?.crossFadeTo(nuova, DISSOLVENZA, false);
+  const monta = dati => {
+    corpo = clonaScheletro(dati.modello);
+    tingi(corpo, tinte);
+    corpo.traverse(o => {
+      if (!mano && o.isBone && /RightHand$/.test(o.name)) mano = o;
+      if (o.isMesh && o.userData.maschera) maschere.push(o);
+      if (o.isMesh && o.userData.capelli) capelli.push(o);
+    });
+    postura.add(corpo);
+    mixer = new THREE.AnimationMixer(corpo);
+    for (const [logico, nomeClip] of Object.entries(CLIP)) {
+      const c = dati.clip.get(nomeClip);
+      if (c) azioni.set(logico, mixer.clipAction(c));
+    }
+  };
+  const pronto = libreria.pronto(modello);
+  if (pronto) monta(pronto);
+  else libreria.carica(modello).then(monta).catch(() => {});
+  const suona = (n, velocita) => {
+    const azione = azioni.get(n);
+    if (!azione) return;
+    const passo = PASSO_CLIP[n];
+    azione.timeScale = passo ? Math.max(0.6, Math.min(1.7, velocita / passo)) : 1;
+    if (attuale === n) return;
+    azione.reset().play();
+    azioni.get(attuale)?.crossFadeTo(azione, DISSOLVENZA, false);
     attuale = n;
   };
-  const passamontagna = new THREE.Mesh(new THREE.SphereGeometry(0.135, 14, 10).scale(1, 1.18, 1.08), new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.95 }));
-  passamontagna.visible = false;
-  if (testa) {
-    testa.add(passamontagna);
-    passamontagna.position.set(0, 0.1, 0.02);
-    passamontagna.scale.setScalar(1 / Math.max(0.01, testa.getWorldScale(new THREE.Vector3()).x || 1));
-  }
   const sacco = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.45, 4, 10).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x2f3328, roughness: 0.9 }));
   sacco.position.set(0, 1.25, 0.2);
   sacco.visible = false;
@@ -106,15 +146,14 @@ function creaPersona(scena, personaggio, materialiArmi, { tipo, nome, colore }) 
   };
   const scritta = nome ? etichetta(nome, '#e8f2ff') : null;
   if (scritta) {
-    scritta.position.y = 2.15;
+    scritta.position.y = 2.1;
     radice.add(scritta);
   }
   const allarme = etichetta('!', '#ff4a3a');
   allarme.scale.set(0.9, 0.9, 1);
-  allarme.position.y = 2.3;
+  allarme.position.y = 2.25;
   allarme.visible = false;
   radice.add(allarme);
-  scena.add(radice);
   const visto = { x: 0, z: 0, yaw: 0, pronto: false, velocita: 0 };
   const posMano = new THREE.Vector3();
   return {
@@ -135,14 +174,20 @@ function creaPersona(scena, personaggio, materialiArmi, { tipo, nome, colore }) 
       const disegna = inVista && !e.inAuto && e.stato !== 'fuggito';
       radice.visible = disegna;
       radice.matrixWorldAutoUpdate = disegna;
-      if (!disegna) return;
+      if (!disegna || !corpo) return;
       const giu = e.stato === 'morto' || e.stato === 'stordito' || e.stato === 'terra' || e.stato === 'arrestato';
       const inGinocchio = e.stato === 'a terra' || e.stato === 'legato';
-      suona(giu || inGinocchio ? 'fermo' : visto.velocita > 3.2 ? 'corre' : visto.velocita > 0.4 ? 'cammina' : 'fermo');
+      const vel = visto.velocita;
+      let clip = vel > 3 ? 'corre' : vel > 0.35 ? 'cammina' : 'fermo';
+      if (inGinocchio || (e.chino && vel <= 0.35)) clip = 'chino';
+      else if (e.chino) clip = 'chinoCammina';
+      else if (e.stato === 'combatte' && vel <= 0.35) clip = 'guardia';
+      suona(clip, vel);
       mixer.update(giu ? 0 : dt);
       postura.rotation.x = giu ? -Math.PI / 2 : 0;
-      postura.position.y = giu ? 0.18 : inGinocchio ? -0.55 : 0;
-      passamontagna.visible = !!e.maschera;
+      postura.position.y = giu ? 0.18 : 0;
+      for (const m of maschere) m.visible = !!e.maschera;
+      if (maschere.length) for (const c of capelli) c.visible = !e.maschera;
       sacco.visible = !!e.sacchi?.length && !giu;
       allarme.visible = e.stato === 'panico' || e.stato === 'radio' || e.stato === 'chiama';
       if (scritta) scritta.visible = !giu;
@@ -157,26 +202,24 @@ function creaPersona(scena, personaggio, materialiArmi, { tipo, nome, colore }) 
     },
     chiudi() {
       scena.remove(radice);
-      mixer.stopAllAction();
-      mixer.uncacheRoot(corpo);
-      corpo.traverse(o => o.skeleton?.dispose());
+      mixer?.stopAllAction();
+      if (corpo) mixer?.uncacheRoot(corpo);
+      corpo?.traverse(o => o.skeleton?.dispose());
     },
   };
 }
 
-export function creaFolla(scena, personaggio, materialiArmi) {
+export function creaFolla(scena, libreria, materialiArmi) {
   const persone = new Map();
+  const deposito = new Map();
   const cono = new THREE.Frustum();
   const proiezione = new THREE.Matrix4();
   const sfera = new THREE.Sphere(new THREE.Vector3(), RAGGIO_VISTA);
-  const deposito = new Map();
-  const chiaveDeposito = (tipo, colore) => `${tipo}|${colore ?? ''}`;
-  const prendi = (tipo, opzioni) => {
-    const k = chiaveDeposito(tipo, opzioni.colore);
-    const libere = deposito.get(k);
+  const prendi = (chiave, opzioni) => {
+    const libere = deposito.get(chiave);
     if (libere?.length && !opzioni.nome) return libere.pop();
-    const p = creaPersona(scena, personaggio, materialiArmi, { tipo, ...opzioni });
-    p.chiaveDeposito = k;
+    const p = creaPersona(scena, libreria, materialiArmi, opzioni);
+    p.chiaveDeposito = chiave;
     return p;
   };
   const posa = (p, conNome) => {
@@ -193,9 +236,9 @@ export function creaFolla(scena, personaggio, materialiArmi) {
     riempi(quanti) {
       for (const [tipo, n] of Object.entries(quanti)) {
         for (let i = 0; i < n; i++) {
-          const p = creaPersona(scena, personaggio, materialiArmi, { tipo });
-          p.chiaveDeposito = chiaveDeposito(tipo, null);
-          p.aggiorna({ x: 0, z: 0, yaw: 0, stato: 'giro', arma: { guardia: 'pistola', vigilante: 'revolver', poliziotto: 'carabina' }[tipo] ?? null }, 0.016, -50);
+          const modello = aspettoDi({ tipo, id: i });
+          const p = creaPersona(scena, libreria, materialiArmi, { tipo, modello, tinte: TINTE[tipo] });
+          p.chiaveDeposito = `${tipo}|${modello}`;
           posa(p, false);
         }
       }
@@ -216,14 +259,17 @@ export function creaFolla(scena, personaggio, materialiArmi) {
         if (g.id === mioId) continue;
         const k = `g:${g.id}`;
         presenti.add(k);
-        if (!persone.has(k)) persone.set(k, prendi('giocatore', { nome: g.nome }));
+        if (!persone.has(k)) persone.set(k, prendi(k, { tipo: 'giocatore', nome: g.nome, modello: aspettoDi({ tipo: 'giocatore', ruolo: g.ruolo }), tinte: TINTE[g.ruolo] }));
         const qg = quota(g.x, g.z);
         persone.get(k).aggiorna({ ...g, arma: g.maschera ? g.arma : null }, dt, qg, inVista(g.x, qg, g.z));
       }
       for (const p of vista?.png ?? []) {
         const k = `p:${p.id}`;
         presenti.add(k);
-        if (!persone.has(k)) persone.set(k, prendi(p.tipo, { colore: p.tipo === 'civile' ? CIVILI[p.id % CIVILI.length] : null }));
+        if (!persone.has(k)) {
+          const modello = p.aspetto ?? aspettoDi({ tipo: p.tipo, id: p.id });
+          persone.set(k, prendi(`${p.tipo}|${modello}`, { tipo: p.tipo, modello, tinte: TINTE[p.tipo] }));
+        }
         const qp = quota(p.x, p.z);
         persone.get(k).aggiorna({ ...p, arma: ['combatte', 'radio', 'sospetto', 'giro'].includes(p.stato) ? ARMI_PNG[p.tipo] ?? null : null }, dt, qp, inVista(p.x, qp, p.z));
       }

@@ -6,6 +6,8 @@ const TIPI_PNG = ['guardia', 'poliziotto', 'titolare', 'civile', 'vigilante'];
 const TIPI_VEICOLO = ['utilitaria', 'berlina', 'furgone', 'volante', 'blindato'];
 const TIPI_SACCO = ['contanti', 'gioielli', 'oro', 'sigarette', 'documenti'];
 const STATI_TELECAMERA = ['attiva', 'loop', 'rotta'];
+import { ASPETTI } from './aspetto.js';
+
 const STATI_CASSAFORTE = ['chiusa', 'trapano', 'aperta', 'ritardo', 'persa'];
 
 export function faiIstantanea(s) {
@@ -19,8 +21,8 @@ export function faiIstantanea(s) {
       c: g.chino ? 1 : 0, co: g.corsa ? 1 : 0, fa: g.fascette, u: g.uso ? r2(g.uso.progresso / g.uso.totale) : -1, uk: g.uso?.chiave ?? '',
       gb: Math.round(g.giubbotto), tt: Math.round(g.timerTerra), tp: g.teletrasporto, ar: g.armi,
     })),
-    p: s.png.map(p => [p.id, TIPI_PNG.indexOf(p.tipo), r2(p.x), r2(p.z), r3(p.yaw), STATI_PNG.indexOf(p.stato), r2(p.sospetto), Math.round(p.vita), p.muove ? r2(p.muove) : 0]),
-    v: s.veicoli.map(v => [v.id, TIPI_VEICOLO.indexOf(v.tipo), r2(v.x), r2(v.z), r3(v.yaw), r2(v.vx), r2(v.vz), r2(v.sterzo), v.sirena ? 1 : 0, Math.round(v.vita), v.nostro ? 1 : 0, v.sacchi.length, r2(v.gas ?? 0)]),
+    p: s.png.map(p => [p.id, TIPI_PNG.indexOf(p.tipo), r2(p.x), r2(p.z), r3(p.yaw), STATI_PNG.indexOf(p.stato), r2(p.sospetto), Math.round(p.vita), p.muove ? r2(p.muove) : 0, Math.max(0, ASPETTI.indexOf(p.aspetto))]),
+    v: s.veicoli.map(v => [v.id, TIPI_VEICOLO.indexOf(v.tipo), r2(v.x), r2(v.z), r3(v.yaw), r2(v.vx), r2(v.vz), r2(v.sterzo), v.sirena ? 1 : 0, Math.round(v.vita), v.nostro ? 1 : v.libera ? 2 : 0, v.sacchi.length, r2(v.gas ?? 0), v.colore ?? -1]),
     k: s.sacchi.map(k => [k.id, TIPI_SACCO.indexOf(k.tipo), r2(k.x), r2(k.y), r2(k.z), k.portatoDa ? 1 : 0, k.veicolo ?? -1]),
     tc: s.telecamere.map(t => [STATI_TELECAMERA.indexOf(t.stato), r3(t.yaw), r2(t.sospetto)]),
     po: Object.entries(s.porte).map(([id, p]) => [id, p.aperta ? 1 : 0, p.serratura ? 1 : 0]),
@@ -32,6 +34,7 @@ export function faiIstantanea(s) {
     fu: [s.fuga?.attiva ? 1 : 0, s.fuga?.polizia ? 1 : 0, r2(s.fuga?.lontano ?? 0)],
     mi: [s.tessera ? 1 : 0, s.fotografie ? 1 : 0, s.missione?.fatto ? 1 : 0, s.missione?.foto.length ?? 0, s.missione?.obiettivi.length ?? 0, s.scadenza ? r2(Math.max(0, s.scadenza - s.tempo)) : -1, s.antipanico === false ? 0 : 1],
     es: s.esito ?? null,
+    bd: { c: s.banda?.capo ?? null, m: s.banda?.membri ?? [], k: s.banda?.colpo ?? null },
   };
 }
 
@@ -45,8 +48,8 @@ export function espandi(i) {
       maschera: !!g.m, sacchi: g.k, arma: g.a, inAuto: g.au < 0 ? null : g.au, posto: g.po, chino: !!g.c, corsa: !!g.co, fascette: g.fa,
       uso: g.u, usoChiave: g.uk, giubbotto: g.gb, timerTerra: g.tt, teletrasporto: g.tp, armi: g.ar,
     })),
-    png: i.p.map(([id, tipo, x, z, yaw, st, sospetto, vita, muove]) => ({ id, tipo: TIPI_PNG[tipo], x, z, yaw, stato: STATI_PNG[st], sospetto, vita, muove })),
-    veicoli: i.v.map(([id, tipo, x, z, yaw, vx, vz, sterzo, sirena, vita, nostro, sacchi, gas]) => ({ id, tipo: TIPI_VEICOLO[tipo], x, z, yaw, vx, vz, sterzo, sirena: !!sirena, vita, nostro: !!nostro, sacchi, gas })),
+    png: i.p.map(([id, tipo, x, z, yaw, st, sospetto, vita, muove, aspetto]) => ({ id, tipo: TIPI_PNG[tipo], x, z, yaw, stato: STATI_PNG[st], sospetto, vita, muove, aspetto: ASPETTI[aspetto] ?? null })),
+    veicoli: i.v.map(([id, tipo, x, z, yaw, vx, vz, sterzo, sirena, vita, nostro, sacchi, gas, colore]) => ({ id, tipo: TIPI_VEICOLO[tipo], x, z, yaw, vx, vz, sterzo, sirena: !!sirena, vita, nostro: nostro === 1, libera: nostro === 2, sacchi, gas, colore: colore >= 0 ? colore : null })),
     sacchi: i.k.map(([id, tipo, x, y, z, portato, veicolo]) => ({ id, tipo: TIPI_SACCO[tipo], x, y, z, portato: !!portato, veicolo: veicolo < 0 ? null : veicolo })),
     telecamere: i.tc.map(([st, yaw, sospetto]) => ({ stato: STATI_TELECAMERA[st], yaw, sospetto })),
     porte: Object.fromEntries(i.po.map(([id, aperta, serratura]) => [id, { aperta: !!aperta, serratura: !!serratura }])),
@@ -62,6 +65,7 @@ export function espandi(i) {
     scadenza: i.mi[5] < 0 ? null : i.mi[5],
     antipanico: i.mi[6] !== 0,
     esito: i.es,
+    banda: { capo: i.bd?.c ?? null, membri: i.bd?.m ?? [], colpo: i.bd?.k ?? null },
   };
 }
 
